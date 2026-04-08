@@ -1,5 +1,20 @@
 import { supabase } from "./supabase";
+import { createClient } from "@supabase/supabase-js";
 
+const supabaseAdmin = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ROLE_KEY,
+  {
+    auth: {
+      // Prevent the admin client from touching (and potentially clobbering)
+      // the currently logged-in user's browser auth session.
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "supabase-admin-session",
+    },
+  }
+);
 
 // Sign in function that authenticates user and fetches their account data
 export const signIn = async (username, password) => {
@@ -43,14 +58,61 @@ export const signIn = async (username, password) => {
   };
 };
 
-// Fetch current user who are logged in
+// Account creation
 
+
+export const createUser = async ({ first_name, last_name, email, password, role }) => {
+  try {
+    const safeEmail = (email ?? "").trim();
+    const safePassword = password ?? "";
+
+    if (!safeEmail) return { success: false, error: "Email is required" };
+    if (!safePassword) return { success: false, error: "Password is required" };
+
+    // 1. Create user without affecting current session
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: safeEmail,
+      password: safePassword,
+      email_confirm: true, // optional
+    });
+    if (error) throw error;
+    
+    // supabase-js returns created user under `data.user` for admin.createUser
+    const authUserId = data?.user?.id ?? data?.id;
+    if (!authUserId) {
+      throw new Error('Created auth user id not found');
+    }
+
+    // 2. Insert into profiles table
+    const { error: profileError } = await supabaseAdmin
+      .from("user_profiles")
+      .insert([
+        {
+          auth_id: authUserId,
+          first_name,
+          last_name,
+          email: safeEmail,
+          role: role || "Employee",
+        },
+      ]);
+    if (profileError) throw profileError;
+
+    return { success: true, user: data?.user ?? data };
+  } catch (error) {
+    console.error("Signup Error:", error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+
+// Fetch current user who are logged in
 export const getCurrentUser = async (id) => {
 	const { data, error } = await supabase.from('user_profiles').select("*").eq('auth_id', id).maybeSingle();
 
 	return { data, error };
 }
 
+// Sign out
 export const signOut = async () => {	
 	const { error } = await supabase.auth.signOut();
 	if (error) {

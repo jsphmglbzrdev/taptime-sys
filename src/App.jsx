@@ -2,28 +2,25 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage";
 import OutletLayout from "./components/OutletLayout";
-import PublicRoute from "./components/PublicRoute";
-import ProtectedRoute from "./components/ProtectedRoute";
+
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import UserDashboard from "./pages/user/UserDashboard";
+import { useAuth } from "./context/AuthContext";
+
 const App = () => {
+  const { user } = useAuth();
+
   return (
     // App.jsx
     <Routes>
       <Route element={<OutletLayout />}>
-        {" "}
-        {/* GLOBAL WRAPPER */}
-        {/* Public */}
-        <Route element={<PublicRoute />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route index element={<Navigate to="/login" replace />} />
-        </Route>
-        {/* Protected */}
-        <Route element={<ProtectedRoute />}>
-          <Route path="/admin/dashboard" element={<AdminDashboard />} />
-        </Route>
+        <Route index path="/login" element={<LoginPage />} />
+
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/user/dashboard" element={<UserDashboard />} />
+
       </Route>
     </Routes>
   );
 };
-
 export default App;

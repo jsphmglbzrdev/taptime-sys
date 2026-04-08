@@ -25,6 +25,8 @@ const OutletLayout = () => {
         pauseOnHover
         theme="light"
       />
+
+			
     </>
   );
 };

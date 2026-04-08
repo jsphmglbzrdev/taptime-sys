@@ -21,16 +21,19 @@ const handleSubmit = async (e) => {
     const response = await signIn(username, password);
 
     if (!response.success) {
-      toast.error(response.error); // show error toast
+      toast.error(response.error); // show error toasts
       return; // stop further execution
     }
 
     console.log("Logged in user:", response.user);
     console.log("Account data:", response.account);
-
-    // Only redirect if login succeeds
-    navigate("/user/dashboard");
-
+		
+		if(response.account.role === "Admin") {
+			navigate("/admin/dashboard");
+		}else{
+			navigate("/user/dashboard");
+		}
+		
   } catch (err) {
     console.error(err);
     toast.error("Something went wrong");
