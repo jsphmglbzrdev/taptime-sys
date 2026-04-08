@@ -43,7 +43,6 @@ export const createUser = async ({ first_name, last_name, email, password, role 
 
     return { success: true, user: data?.user ?? data };
   } catch (error) {
-    console.error("Signup Error:", error.message);
     return { success: false, error: error.message };
   }
 };
@@ -58,7 +57,6 @@ export const listUserProfiles = async () => {
     if (error) throw error;
     return { success: true, data: data ?? [] };
   } catch (error) {
-    console.error("List users error:", error.message);
     return { success: false, error: error.message };
   }
 };
@@ -86,7 +84,6 @@ export const updateUserAccount = async ({ auth_id, first_name, last_name, passwo
 
     return { success: true };
   } catch (error) {
-    console.error("Update user error:", error.message);
     return { success: false, error: error.message };
   }
 };
@@ -102,7 +99,6 @@ export const deleteUserAccount = async ({ auth_id }) => {
 
     return { success: true };
   } catch (error) {
-    console.error("Delete user error:", error.message);
     return { success: false, error: error.message };
   }
 };
@@ -120,7 +116,6 @@ export const listTimeEntriesByAuthId = async ({ auth_id }) => {
     if (error) throw error;
     return { success: true, data: data ?? [] };
   } catch (error) {
-    console.error("List time entries error:", error.message);
     return { success: false, error: error.message };
   }
 };

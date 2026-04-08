@@ -14,11 +14,9 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
       const response = await getCurrentUser(user.id);
 
       if (response.error) {
-        console.error("Fetch error:", response.error);
         return;
       }
 
-      console.log(response.data);
       setCurrentUser(response.data);
     };
 

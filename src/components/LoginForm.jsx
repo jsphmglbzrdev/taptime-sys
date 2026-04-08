@@ -24,9 +24,6 @@ const handleSubmit = async (e) => {
       toast.error(response.error); // show error toasts
       return; // stop further execution
     }
-
-    console.log("Logged in user:", response.user);
-    console.log("Account data:", response.account);
 		
 		if(response.account.role === "Admin") {
 			navigate("/admin/dashboard");
@@ -35,7 +32,6 @@ const handleSubmit = async (e) => {
 		}
 		
   } catch (err) {
-    console.error(err);
     toast.error("Something went wrong");
   } finally {
     setLoading(false);

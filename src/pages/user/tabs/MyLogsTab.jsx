@@ -54,7 +54,6 @@ export default function MyLogsTab() {
       setRows(res.data ?? []);
       setTotal(res.count ?? 0);
     } catch (err) {
-      console.error(err);
       toast.error("Failed to load logs.");
     } finally {
       setIsLoading(false);
@@ -112,7 +111,6 @@ export default function MyLogsTab() {
       const fileName = `my-logs-${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
     } catch (err) {
-      console.error(err);
       toast.error("Failed to export Excel.");
     } finally {
       setIsDownloading(false);

@@ -166,7 +166,6 @@ function OverviewTab({ currentTime }) {
         (selected.email ?? "employee");
       XLSX.writeFile(wb, `employee-logs-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (err) {
-      console.error(err);
       toast.error("Failed to export Excel.");
     } finally {
       setIsExporting(false);

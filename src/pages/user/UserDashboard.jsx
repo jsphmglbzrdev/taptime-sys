@@ -68,7 +68,6 @@ export default function UserDashboard() {
 
   useEffect(() => {
     fetchAttendance().catch((err) => {
-      console.error("Failed to fetch attendance:", err);
       toast.error("Failed to load your time logs.");
     });
   }, [fetchAttendance]);
@@ -204,7 +203,6 @@ export default function UserDashboard() {
       await fetchAttendance();
       toast.success("Clocked in.");
     } catch (err) {
-      console.error(err);
       toast.error("Failed to clock in.");
     } finally {
       setLoading(false);
@@ -221,7 +219,6 @@ export default function UserDashboard() {
       await fetchAttendance();
       toast.success("Clocked out.");
     } catch (err) {
-      console.error(err);
       toast.error("Failed to clock out.");
     } finally {
       setLoading(false);
@@ -258,7 +255,6 @@ export default function UserDashboard() {
         await fetchAttendance();
         toast.success("Break started.");
       } catch (err) {
-        console.error(err);
         toast.error("Failed to start break.");
       } finally {
         setLoading(false);
@@ -305,7 +301,6 @@ export default function UserDashboard() {
         await fetchAttendance();
         if (!silent) toast.success("Break ended.");
       } catch (err) {
-        console.error(err);
         toast.error("Failed to end break.");
       } finally {
         setLoading(false);

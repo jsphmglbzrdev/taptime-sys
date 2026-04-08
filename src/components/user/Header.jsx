@@ -13,7 +13,6 @@ const Header = ({ setIsSidebarOpen }) => {
       if (!user) return;
       const response = await getCurrentUser(user.id);
       if (response?.error) {
-        console.error("Failed to fetch current user:", response.error);
         return;
       }
       setProfile(response.data ?? null);

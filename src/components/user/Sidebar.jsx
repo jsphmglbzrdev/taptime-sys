@@ -19,8 +19,7 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) =
   const handleLogout = async () => {
     setLoading(true);
     try {
-      const response = await signOut();
-      console.log(response);
+      await signOut();
       navigate("/login");
     } finally {
       setLoading(false);

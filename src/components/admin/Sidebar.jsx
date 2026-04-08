@@ -25,8 +25,7 @@ export default function Sidebar({
   const handleLogout = async () => {
     setLoading(false);
     try {
-      const response = await signOut();
-      console.log(response);
+      await signOut();
       navigate("/login");
     } finally {
       setLoading(false);

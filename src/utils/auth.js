@@ -24,7 +24,6 @@ export const signIn = async (username, password) => {
   });
 
   if (error) {
-    console.error('Error signing in:', error.message);
     return { success: false, error: error.message };
   }
 
@@ -40,16 +39,12 @@ export const signIn = async (username, password) => {
     .eq('auth_id', userId).maybeSingle();
 	
   if (errorAccount) {
-    console.error('Error fetching user account:', errorAccount.message);
     return { success: false, error: errorAccount.message };
   }
 
   if (!userAccount) {
     return { success: false, error: 'User account not found' };
   }
-
-  console.log('User account data from table:', userAccount);
-  console.log('Auth data:', data);
 
   return {
     success: true,
@@ -99,7 +94,6 @@ export const createUser = async ({ first_name, last_name, email, password, role 
 
     return { success: true, user: data?.user ?? data };
   } catch (error) {
-    console.error("Signup Error:", error.message);
     return { success: false, error: error.message };
   }
 };
@@ -116,7 +110,6 @@ export const getCurrentUser = async (id) => {
 export const signOut = async () => {	
 	const { error } = await supabase.auth.signOut();
 	if (error) {
-		console.error('Error signing out:', error.message);
 		return { success: false, error: error.message };
 	}
 	return { success: true };
