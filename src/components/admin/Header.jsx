@@ -27,8 +27,9 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 shrink-0">
       <div className="flex items-center">
         <button
+          type="button"
           onClick={() => setIsSidebarOpen(true)}
-          className="p-2 mr-2 text-gray-500 hover:bg-gray-100 rounded-lg lg:hidden"
+          className="p-2 mr-2 text-gray-500 hover:bg-gray-100 rounded-lg lg:hidden cursor-pointer"
         >
           <Menu size={24} />
         </button>

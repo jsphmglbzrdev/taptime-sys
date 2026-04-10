@@ -96,7 +96,7 @@ export const deleteUserAccount = async ({ auth_id }) => {
     // If not, this still removes the login.
     const { error } = await supabaseAdmin.auth.admin.deleteUser(auth_id);
     if (error) throw error;
-
+ 
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };

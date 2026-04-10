@@ -34,6 +34,8 @@ const handleSubmit = async (e) => {
   } catch (err) {
     toast.error("Something went wrong");
   } finally {
+    setUsername("");
+    setPassword("");
     setLoading(false);
   }
 };

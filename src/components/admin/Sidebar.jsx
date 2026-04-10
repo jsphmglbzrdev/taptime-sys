@@ -1,4 +1,4 @@
-import { Clock, LayoutDashboard, Users, Plus, LogOut, X } from "lucide-react";
+import { Clock, LayoutDashboard, Users, Plus, LogOut, X, User2, Timer } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
@@ -18,6 +18,8 @@ export default function Sidebar({
   const menuItems = [
     { id: "Overview", icon: <LayoutDashboard size={20} />, label: "Overview" },
     { id: "Employees", icon: <Users size={20} />, label: "Employees" },
+    { id: "Manage Shift", icon: <Timer size={20} />, label: "Manage Shift" },
+    { id: "My Account", icon: <User2 size={20} />, label: "My Account" },
   ];
 
   const { setLoading } = useLoading();
@@ -52,8 +54,9 @@ export default function Sidebar({
               </span>
             </div>
             <button
+              type="button"
               onClick={() => setIsSidebarOpen(false)}
-              className="lg:hidden text-gray-400"
+              className="lg:hidden text-gray-400 cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -112,7 +115,7 @@ function NavItem({ icon, label, active, onClick, badge }) {
     <button
       onClick={onClick}
       className={`
-        flex items-center justify-between w-full px-4 py-3 text-sm font-bold rounded-xl transition-all
+        flex items-center cursor-pointer justify-between w-full px-4 py-3 text-sm font-bold rounded-xl transition-all
         ${
           active
             ? "bg-orange-500 text-white shadow-lg shadow-orange-100"

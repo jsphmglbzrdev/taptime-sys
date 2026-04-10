@@ -4,95 +4,8 @@ import { listTimeEntriesByAuthId, listUserProfiles } from "../../../utils/admin"
 import { useLoading } from "../../../context/LoadingContext";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
+import EmployeeLogsModal from "../../../components/admin/EmployeesLogModal";
 
-function formatTime(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function EmployeeLogsModal({ isOpen, onClose, employee, rows, onExport, isExporting }) {
-  if (!isOpen || !employee) return null;
-
-  const displayName =
-    `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() || employee.email;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-      <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-md" onClick={onClose} />
-
-      <div className="relative w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white border border-slate-100 shadow-2xl">
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
-          <div className="min-w-0">
-            <h3 className="text-lg font-black text-gray-800 truncate">
-              {displayName} — Time Logs
-            </h3>
-            <p className="text-sm text-gray-500 truncate">{employee.email}</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onExport}
-              disabled={isExporting}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              <Download size={18} />
-              {isExporting ? "Exporting..." : "Download Excel"}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-              title="Close"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-[10px] uppercase tracking-widest text-gray-400 bg-gray-50/50">
-                <th className="px-6 py-3 font-bold">Date</th>
-                <th className="px-6 py-3 font-bold">Clock In</th>
-                <th className="px-6 py-3 font-bold">Morning Break Time (Time In)</th>
-                <th className="px-6 py-3 font-bold">Morning Break Time (Time Out)</th>
-                <th className="px-6 py-3 font-bold">Afternoon Break Time (Time In)</th>
-                <th className="px-6 py-3 font-bold">Afternoon Break Time (Time Out)</th>
-                <th className="px-6 py-3 font-bold">Lunch Break Time (Time In)</th>
-                <th className="px-6 py-3 font-bold">Lunch Break Time (Time Out)</th>
-                <th className="px-6 py-3 font-bold">Clock Out</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {rows.map((r) => (
-                <tr key={r.id} className="text-sm">
-                  <td className="px-6 py-4 font-bold text-gray-700">{r.shift_date}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.clock_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.morning_break_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.morning_break_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.afternoon_break_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.afternoon_break_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.lunch_break_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.lunch_break_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.clock_out_at)}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-6 py-10 text-gray-400 text-sm font-medium">
-                    No time logs found for this employee.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function OverviewTab({ currentTime }) {
   const { setLoading } = useLoading();
@@ -155,6 +68,8 @@ function OverviewTab({ currentTime }) {
         "Lunch Break Time (Time In)": r.lunch_break_in_at ? new Date(r.lunch_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
         "Lunch Break Time (Time Out)": r.lunch_break_out_at ? new Date(r.lunch_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
         "Clock Out": r.clock_out_at ? new Date(r.clock_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+        "Overtime Start": r.overtime_start ? new Date(r.overtime_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+        "Overtime End": r.overtime_end ? new Date(r.overtime_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
@@ -189,7 +104,7 @@ function OverviewTab({ currentTime }) {
           key={emp.auth_id}
           type="button"
           onClick={() => openEmployeeLogs(emp)}
-          className="text-left bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all"
+          className="text-left bg-white rounded-2xl border cursor-pointer border-gray-100 p-6 shadow-sm hover:shadow-md transition-all"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
@@ -223,7 +138,11 @@ function OverviewTab({ currentTime }) {
         <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 flex items-center gap-3 shadow-sm">
           <Clock size={18} className="text-orange-500" />
           <span className="text-lg font-bold tabular-nums">
-            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {currentTime.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })}
           </span>
         </div>
       </div>
@@ -239,7 +158,7 @@ function OverviewTab({ currentTime }) {
           <button
             type="button"
             onClick={loadEmployees}
-            className="text-xs font-bold text-orange-500 hover:underline"
+            className="text-xs font-bold text-orange-500 hover:underline cursor-pointer"
           >
             Refresh
           </button>

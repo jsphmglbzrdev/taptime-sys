@@ -3,7 +3,7 @@
 import { Outlet } from "react-router-dom";
 import { useLoading } from "../context/LoadingContext";
 import LoadingSpinner from "./LoadingSpinner";
-import { ToastContainer } from "react-toastify";
+import OrangeToastContainer from "./OrangeToastContainer";
 
 const OutletLayout = () => {
   const { loading } = useLoading();
@@ -13,20 +13,7 @@ const OutletLayout = () => {
       <Outlet />
       {loading && <LoadingSpinner />}
 
-      <ToastContainer
-        position="top-right"
-        autoClose={2000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick={false}
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-      />
-
-			
+      <OrangeToastContainer />
     </>
   );
 };

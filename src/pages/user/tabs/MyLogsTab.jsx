@@ -9,7 +9,11 @@ const PAGE_SIZE = 10;
 
 function formatTime(value) {
   if (!value) return "-";
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const raw = String(value).trim();
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function MyLogsTab() {
@@ -41,7 +45,9 @@ export default function MyLogsTab() {
           afternoon_break_out_at,
           lunch_break_in_at,
           lunch_break_out_at,
-          clock_out_at
+          clock_out_at,
+          overtime_start,
+          overtime_end
         `,
           { count: "exact" }
         )
@@ -84,7 +90,9 @@ export default function MyLogsTab() {
           afternoon_break_out_at,
           lunch_break_in_at,
           lunch_break_out_at,
-          clock_out_at
+          clock_out_at,
+          overtime_start,
+          overtime_end
         `
         )
         .eq("auth_id", user.id)
@@ -102,6 +110,12 @@ export default function MyLogsTab() {
         "Lunch Break Time (Time In)": r.lunch_break_in_at ? new Date(r.lunch_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
         "Lunch Break Time (Time Out)": r.lunch_break_out_at ? new Date(r.lunch_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
         "Clock Out": r.clock_out_at ? new Date(r.clock_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+        "Overtime Start": r.overtime_start
+          ? new Date(r.overtime_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "",
+        "Overtime End": r.overtime_end
+          ? new Date(r.overtime_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "",
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
@@ -149,6 +163,7 @@ export default function MyLogsTab() {
                 <th className="px-6 py-3 font-bold">Lunch Break Time (Time In)</th>
                 <th className="px-6 py-3 font-bold">Lunch Break Time (Time Out)</th>
                 <th className="px-6 py-3 font-bold">Clock Out</th>
+                <th className="px-6 py-3 font-bold">Overtime</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -163,11 +178,18 @@ export default function MyLogsTab() {
                   <td className="px-6 py-4 text-gray-500">{formatTime(r.lunch_break_in_at)}</td>
                   <td className="px-6 py-4 text-gray-500">{formatTime(r.lunch_break_out_at)}</td>
                   <td className="px-6 py-4 text-gray-500">{formatTime(r.clock_out_at)}</td>
+                  <td className="px-6 py-4 text-gray-500">
+                    {r.overtime_start && r.overtime_end
+                      ? `${formatTime(r.overtime_start)} - ${formatTime(r.overtime_end)}`
+                      : r.overtime_start
+                        ? `${formatTime(r.overtime_start)} - Ongoing`
+                        : "-"}
+                  </td>
                 </tr>
               ))}
               {!isLoading && rows.length === 0 && (
                 <tr>
-                  <td className="px-6 py-8 text-gray-400 text-sm font-medium" colSpan={9}>
+                  <td className="px-6 py-8 text-gray-400 text-sm font-medium" colSpan={10}>
                     No logs found.
                   </td>
                 </tr>
