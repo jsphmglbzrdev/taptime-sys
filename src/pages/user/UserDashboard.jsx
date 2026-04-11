@@ -15,7 +15,8 @@ import { toast } from "react-toastify";
 import ConfirmationBox from "../../components/ConfirmationBox";
 import MyLogsTab from "./tabs/MyLogsTab";
 import {
-  computeOvertimeMinutes,
+  isLate,
+	isUnderTime,
   evaluateClockIn,
   formatShiftTimeLabel,
   getClockInWindow,
@@ -772,7 +773,7 @@ export default function UserDashboard() {
                           !user ||
                           !!todayEntry?.overtime_start
                         }
-                        className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 bg-blue-500 text-white hover:bg-blue-600 shadow-blue-200 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 bg-orange-500 text-white hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed"
                       >
                         <Clock size={22} />
                         Start Overtime
@@ -1073,16 +1074,7 @@ export default function UserDashboard() {
                           const hasLunchIn = !!log.lunch_break_in_at;
                           const hasLunchOut = !!log.lunch_break_out_at;
 
-                          const isLate = (
-                            clockIn,
-                            shiftStart,
-                            graceMinutes = 0,
-                          ) => {
-                            const clockInMin = parseTimeToMinutes(clockIn);
-                            const shiftMin = parseTimeToMinutes(shiftStart);
-
-                            return clockInMin > shiftMin + graceMinutes;
-                          };
+                          
 
                           const considerLate = isLate(
                             formatTime(log?.clock_in_at), // "04:41 PM"
@@ -1090,13 +1082,7 @@ export default function UserDashboard() {
                             5,
                           );
 
-                          const isUnderTime = (clockOut, shiftClockOut) => {
-                            const clockOutMin = parseTimeToMinutes(clockOut);
-                            const shiftMin = parseTimeToMinutes(shiftClockOut);
-
-                            return clockOutMin < shiftMin;
-                          };
-
+                   
                           const considerUnderTime = isUnderTime(
                             formatTime(log?.clock_out_at),
                             weeklyShift?.shift_end_time,

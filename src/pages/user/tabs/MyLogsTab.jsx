@@ -4,6 +4,7 @@ import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
+import { isLate, isUnderTime } from "../../../utils/shiftSchedule";
 
 const PAGE_SIZE = 10;
 
@@ -23,10 +24,14 @@ export default function MyLogsTab() {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
+  const [weeklyShift, setWeeklyShift] = useState(null);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    [total],
+  );
   const rangeFrom = useMemo(() => (page - 1) * PAGE_SIZE, [page]);
   const rangeTo = useMemo(() => rangeFrom + PAGE_SIZE - 1, [rangeFrom]);
+  const getShiftDate = useCallback((d) => d.toLocaleDateString("en-CA"), []);
 
   const fetchPage = useCallback(async () => {
     if (!user) return;
@@ -46,10 +51,11 @@ export default function MyLogsTab() {
           lunch_break_in_at,
           lunch_break_out_at,
           clock_out_at,
+					scheduled_shift,
           overtime_start,
           overtime_end
         `,
-          { count: "exact" }
+          { count: "exact" },
         )
         .eq("auth_id", user.id)
         .order("shift_date", { ascending: false })
@@ -91,32 +97,110 @@ export default function MyLogsTab() {
           lunch_break_in_at,
           lunch_break_out_at,
           clock_out_at,
+					scheduled_shift,
           overtime_start,
           overtime_end
-        `
+        `,
         )
         .eq("auth_id", user.id)
         .order("shift_date", { ascending: false });
 
       if (res.error) throw res.error;
 
-      const data = (res.data ?? []).map((r) => ({
-        Date: r.shift_date,
-        "Clock In": r.clock_in_at ? new Date(r.clock_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Morning Break Time (Time In)": r.morning_break_in_at ? new Date(r.morning_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Morning Break Time (Time Out)": r.morning_break_out_at ? new Date(r.morning_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Afternoon Break Time (Time In)": r.afternoon_break_in_at ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Afternoon Break Time (Time Out)": r.afternoon_break_out_at ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Lunch Break Time (Time In)": r.lunch_break_in_at ? new Date(r.lunch_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Lunch Break Time (Time Out)": r.lunch_break_out_at ? new Date(r.lunch_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Clock Out": r.clock_out_at ? new Date(r.clock_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Overtime Start": r.overtime_start
-          ? new Date(r.overtime_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-          : "",
-        "Overtime End": r.overtime_end
-          ? new Date(r.overtime_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-          : "",
-      }));
+      const data = (res.data ?? []).map((r) => {
+        const [shiftStartTime, shiftEndTime] =
+          r.scheduled_shift?.split(/\s*-\s*/).map((value) => value.trim()) ?? ["", ""];
+
+        const effectiveShiftStart =
+          shiftStartTime || weeklyShift?.shift_start_time || "";
+        const effectiveShiftEnd =
+          shiftEndTime || weeklyShift?.shift_end_time || "";
+
+        // Format times
+        const clockInTime = r.clock_in_at
+          ? new Date(r.clock_in_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+        const clockOutTime = r.clock_out_at
+          ? new Date(r.clock_out_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+
+        // Calculate status
+        const consideredLate = clockInTime
+          ? isLate(clockInTime, effectiveShiftStart, 5)
+          : false;
+        const consideredUnderTime = clockOutTime
+          ? isUnderTime(clockOutTime, effectiveShiftEnd)
+          : false;
+
+        // Append status to times
+        const clockInDisplay = clockInTime
+          ? `${clockInTime}${consideredLate ? " - Late" : ""}`
+          : "";
+        const clockOutDisplay = clockOutTime
+          ? `${clockOutTime}${consideredUnderTime ? " - Undertime" : ""}`
+          : "";
+					
+	        return {
+          Date: r.shift_date,
+          "Scheduled Time Shift": r.scheduled_shift,
+          "Clock In": clockInDisplay,
+          "Morning Break Time (Time In)": r.morning_break_in_at
+            ? new Date(r.morning_break_in_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Morning Break Time (Time Out)": r.morning_break_out_at
+            ? new Date(r.morning_break_out_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Afternoon Break Time (Time In)": r.afternoon_break_in_at
+            ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Afternoon Break Time (Time Out)": r.afternoon_break_out_at
+            ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Lunch Break Time (Time In)": r.lunch_break_in_at
+            ? new Date(r.lunch_break_in_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Lunch Break Time (Time Out)": r.lunch_break_out_at
+            ? new Date(r.lunch_break_out_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Clock Out": clockOutDisplay,
+          "Overtime Start": r.overtime_start
+            ? new Date(r.overtime_start).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Overtime End": r.overtime_end
+            ? new Date(r.overtime_end).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+        };
+      });
 
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -129,14 +213,43 @@ export default function MyLogsTab() {
     } finally {
       setIsDownloading(false);
     }
-  }, [user]);
+  }, [user, weeklyShift]);
+
+  const fetchWeeklyShift = useCallback(async () => {
+    if (!user) return;
+    const today = getShiftDate(new Date());
+    const res = await supabase
+      .from("employee_weekly_shifts")
+      .select("week_start, week_end, shift_start_time, shift_end_time")
+      .eq("employee_auth_id", user.id)
+      .lte("week_start", today)
+      .gte("week_end", today)
+      .maybeSingle();
+
+    if (res.error) {
+      setWeeklyShift(null);
+      return;
+    }
+    setWeeklyShift(res.data ?? null);
+  }, [getShiftDate, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([fetchWeeklyShift()]).catch(() => {
+      toast.error("Failed to load dashboard data.");
+    });
+  }, [user, fetchWeeklyShift]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">My Logs</h2>
-          <p className="text-gray-500 text-sm font-medium">All your time entries</p>
+          <h2 className="text-2xl font-black text-gray-800 tracking-tight">
+            My Logs
+          </h2>
+          <p className="text-gray-500 text-sm font-medium">
+            All your time entries
+          </p>
         </div>
         <button
           type="button"
@@ -155,41 +268,99 @@ export default function MyLogsTab() {
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-gray-400 bg-gray-50/50">
                 <th className="px-6 py-3 font-bold">Date</th>
+                <th className="px-6 py-3 font-bold">Scheduled Time Shift</th>
                 <th className="px-6 py-3 font-bold">Clock In</th>
-                <th className="px-6 py-3 font-bold">Morning Break Time (Time In)</th>
-                <th className="px-6 py-3 font-bold">Morning Break Time (Time Out)</th>
-                <th className="px-6 py-3 font-bold">Afternoon Break Time (Time In)</th>
-                <th className="px-6 py-3 font-bold">Afternoon Break Time (Time Out)</th>
-                <th className="px-6 py-3 font-bold">Lunch Break Time (Time In)</th>
-                <th className="px-6 py-3 font-bold">Lunch Break Time (Time Out)</th>
+                <th className="px-6 py-3 font-bold">
+                  Morning Break Time (Time In)
+                </th>
+                <th className="px-6 py-3 font-bold">
+                  Morning Break Time (Time Out)
+                </th>
+                <th className="px-6 py-3 font-bold">
+                  Afternoon Break Time (Time In)
+                </th>
+                <th className="px-6 py-3 font-bold">
+                  Afternoon Break Time (Time Out)
+                </th>
+                <th className="px-6 py-3 font-bold">
+                  Lunch Break Time (Time In)
+                </th>
+                <th className="px-6 py-3 font-bold">
+                  Lunch Break Time (Time Out)
+                </th>
                 <th className="px-6 py-3 font-bold">Clock Out</th>
-                <th className="px-6 py-3 font-bold">Overtime</th>
+                <th className="px-6 py-3 font-bold">Overtime Start</th>
+                <th className="px-6 py-3 font-bold">Overtime End</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {rows.map((r) => (
-                <tr key={r.id} className="text-sm">
-                  <td className="px-6 py-4 font-bold text-gray-700">{r.shift_date}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.clock_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.morning_break_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.morning_break_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.afternoon_break_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.afternoon_break_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.lunch_break_in_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.lunch_break_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">{formatTime(r.clock_out_at)}</td>
-                  <td className="px-6 py-4 text-gray-500">
-                    {r.overtime_start && r.overtime_end
-                      ? `${formatTime(r.overtime_start)} - ${formatTime(r.overtime_end)}`
-                      : r.overtime_start
-                        ? `${formatTime(r.overtime_start)} - Ongoing`
-                        : "-"}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const considerLate = isLate(
+                  formatTime(r?.clock_in_at),
+                  weeklyShift?.shift_start_time,
+                  5,
+                );
+                const considerUnderTime = isUnderTime(
+                  formatTime(r?.clock_out_at),
+                  weeklyShift?.shift_end_time,
+                );
+                return (
+                  <tr key={r.id} className="text-sm">
+                    <td className="px-6 py-4 font-bold text-gray-700">
+                      {r.shift_date}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700">
+                      {r.scheduled_shift}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.clock_in_at)}{" "}
+                      {considerLate && (
+                        <span className="bg-orange-600 text-white px-2 rounded-2xl">
+                          Late
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.morning_break_in_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.morning_break_out_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.afternoon_break_in_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.afternoon_break_out_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.lunch_break_in_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.lunch_break_out_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.clock_out_at)}{" "}
+                      {considerUnderTime && (
+                        <span className="bg-orange-600 text-white px-2 rounded-2xl">
+                          Undertime
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.overtime_start)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatTime(r.overtime_end)}
+                    </td>
+                  </tr>
+                );
+              })}
               {!isLoading && rows.length === 0 && (
                 <tr>
-                  <td className="px-6 py-8 text-gray-400 text-sm font-medium" colSpan={10}>
+                  <td
+                    className="px-6 py-8 text-gray-400 text-sm font-medium"
+                    colSpan={10}
+                  >
                     No logs found.
                   </td>
                 </tr>
@@ -227,4 +398,3 @@ export default function MyLogsTab() {
     </div>
   );
 }
-

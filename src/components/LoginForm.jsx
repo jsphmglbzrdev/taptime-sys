@@ -7,38 +7,42 @@ import { useNavigate } from "react-router-dom";
 
 export default function LoginForm({ onLogin }) {
   const { setLoading } = useLoading();
-	const navigate = useNavigate();
+  const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-// LoginPage.jsx or MainLogin.jsx
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
+  // LoginPage.jsx or MainLogin.jsx
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
 
-  try {
-    const response = await signIn(username, password);
+    try {
 
-    if (!response.success) {
-      toast.error(response.error); // show error toasts
-      return; // stop further execution
+      if (!username.includes("@")) {
+        return toast.error("Username must be an email address.");
+      }
+
+      const response = await signIn(username, password);
+
+      if (!response.success) {
+        toast.error(response.error); // show error toasts
+        return; // stop further execution
+      }
+
+      if (response.account.role === "Admin") {
+        navigate("/admin/dashboard");
+      } else {
+        navigate("/user/dashboard");
+      }
+    } catch (err) {
+      toast.error("Something went wrong");
+    } finally {
+      setUsername("");
+      setPassword("");
+      setLoading(false);
     }
-		
-		if(response.account.role === "Admin") {
-			navigate("/admin/dashboard");
-		}else{
-			navigate("/user/dashboard");
-		}
-		
-  } catch (err) {
-    toast.error("Something went wrong");
-  } finally {
-    setUsername("");
-    setPassword("");
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4 sm:p-6 lg:p-8">
