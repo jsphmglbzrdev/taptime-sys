@@ -42,11 +42,11 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) =
               <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white">
                 <Clock size={18} strokeWidth={3} />
               </div>
-              <span className="text-xl font-bold text-gray-800">TapTime</span>
+              <span className="text-xl font-bold text-orange-600">TapTime</span>
             </div>
             <button
               onClick={() => setIsSidebarOpen(false)}
-              className="lg:hidden text-gray-400 hover:text-gray-600"
+              className="lg:hidden text-gray-400 cursor-pointer hover:text-gray-600"
             >
               <X size={20} />
             </button>
@@ -78,7 +78,7 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) =
           <div className="p-4 border-t border-gray-100">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="flex items-center w-full px-4 py-3 text-sm font-semibold text-gray-500 hover:bg-orange-50 hover:text-orange-600 rounded-xl transition-all"
+              className="flex items-center w-full px-4 py-3 text-sm font-semibold text-gray-500 cursor-pointer hover:bg-orange-50 hover:text-orange-600 rounded-xl transition-all"
             >
               <LogOut size={18} className="mr-3" />
               Sign Out
@@ -118,7 +118,7 @@ function NavItem({ icon, label, active = false, onClick }) {
       type="button"
       onClick={onClick}
       className={`
-        flex items-center px-4 py-3 text-sm font-bold rounded-xl transition-all w-full text-left
+        flex items-center px-4 py-3 text-sm font-bold rounded-xl transition-all w-full text-left cursor-pointer
         ${
           active
             ? "bg-orange-500 text-white shadow-lg shadow-orange-100"

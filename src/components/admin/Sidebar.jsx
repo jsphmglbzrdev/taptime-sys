@@ -1,4 +1,4 @@
-import { Clock, LayoutDashboard, Users, Plus, LogOut, X, User2, Timer } from "lucide-react";
+import { Clock, LayoutDashboard, Users, Plus, LogOut, X, User2, Timer, TruckElectricIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
@@ -25,7 +25,7 @@ export default function Sidebar({
   const { setLoading } = useLoading();
 
   const handleLogout = async () => {
-    setLoading(false);
+    setLoading(true);
     try {
       await signOut();
       navigate("/login");
@@ -49,7 +49,7 @@ export default function Sidebar({
               <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white">
                 <Clock size={18} strokeWidth={3} />
               </div>
-              <span className="text-xl font-bold text-gray-800 tracking-tight">
+              <span className="text-xl font-bold text-orange-600 tracking-tight">
                 TapTime
               </span>
             </div>

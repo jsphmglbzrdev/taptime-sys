@@ -773,7 +773,7 @@ export default function UserDashboard() {
                           !user ||
                           !!todayEntry?.overtime_start
                         }
-                        className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 bg-orange-500 text-white hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 cursor-pointer bg-orange-500 text-white hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed"
                       >
                         <Clock size={22} />
                         Start Overtime
@@ -782,7 +782,7 @@ export default function UserDashboard() {
                       <button
                         onClick={() => openConfirm("overtime_end")}
                         disabled={isActionPending || isConfirmOpen || !user}
-                        className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 bg-orange-50 text-orange-600 border-2 border-orange-100 hover:bg-orange-100 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 cursor-pointer bg-orange-50 text-orange-600 border-2 border-orange-100 hover:bg-orange-100 disabled:opacity-70 disabled:cursor-not-allowed"
                       >
                         <Clock size={22} />
                         End Overtime
@@ -799,7 +799,7 @@ export default function UserDashboard() {
                           (isShiftActive && isAnyBreakActive) ||
                           (!isShiftActive && !canClockInNow)
                         }
-                        className={`w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 ${
+                        className={`w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 cursor-pointer ${
                           isShiftActive
                             ? "bg-red-50 text-red-600 border-2 border-red-100 hover:bg-red-100"
                             : "bg-orange-500 text-white hover:bg-orange-600 shadow-orange-200"
@@ -857,7 +857,7 @@ export default function UserDashboard() {
                             <button
                               onClick={() => openConfirm("morning_break_end")}
                               disabled={isActionPending || isConfirmOpen}
-                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                             >
                               End Now
                             </button>
@@ -873,7 +873,7 @@ export default function UserDashboard() {
                             isAnyBreakActive ||
                             hasMorningBreak
                           }
-                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
                           Start Morning Break
                         </button>
@@ -921,7 +921,7 @@ export default function UserDashboard() {
                             <button
                               onClick={() => openConfirm("lunch_break_end")}
                               disabled={isActionPending || isConfirmOpen}
-                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                             >
                               End Now
                             </button>
@@ -937,7 +937,7 @@ export default function UserDashboard() {
                             isAnyBreakActive ||
                             hasLunchBreak
                           }
-                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
                           Start Lunch Break
                         </button>
@@ -985,7 +985,7 @@ export default function UserDashboard() {
                             <button
                               onClick={() => openConfirm("afternoon_break_end")}
                               disabled={isActionPending || isConfirmOpen}
-                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                             >
                               End Now
                             </button>
@@ -1001,7 +1001,7 @@ export default function UserDashboard() {
                             isAnyBreakActive ||
                             hasAfternoonBreak
                           }
-                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
                           Start Afternoon Break
                         </button>
@@ -1019,7 +1019,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setActiveTab("My Logs")}
-                      className="text-xs font-bold text-orange-500 hover:underline flex items-center gap-1"
+                      className="text-xs cursor-pointer font-bold text-orange-500 hover:underline flex items-center gap-1"
                     >
                       VIEW ALL <ChevronRight size={14} />
                     </button>

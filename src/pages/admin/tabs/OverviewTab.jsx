@@ -5,6 +5,8 @@ import { useLoading } from "../../../context/LoadingContext";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
 import EmployeeLogsModal from "../../../components/admin/EmployeesLogModal";
+import { isLate, isUnderTime } from "../../../utils/shiftSchedule";
+import { supabase } from "../../../utils/supabase";
 
 
 function OverviewTab({ currentTime }) {
@@ -58,19 +60,88 @@ function OverviewTab({ currentTime }) {
     if (!selected) return;
     setIsExporting(true);
     try {
-      const data = (logs ?? []).map((r) => ({
-        Date: r.shift_date,
-        "Clock In": r.clock_in_at ? new Date(r.clock_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Morning Break Time (Time In)": r.morning_break_in_at ? new Date(r.morning_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Morning Break Time (Time Out)": r.morning_break_out_at ? new Date(r.morning_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Afternoon Break Time (Time In)": r.afternoon_break_in_at ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Afternoon Break Time (Time Out)": r.afternoon_break_out_at ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Lunch Break Time (Time In)": r.lunch_break_in_at ? new Date(r.lunch_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Lunch Break Time (Time Out)": r.lunch_break_out_at ? new Date(r.lunch_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Clock Out": r.clock_out_at ? new Date(r.clock_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Overtime Start": r.overtime_start ? new Date(r.overtime_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        "Overtime End": r.overtime_end ? new Date(r.overtime_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-      }));
+      // Fetch weekly shift for the employee
+      let weeklyShiftData = null;
+      if (logs.length > 0) {
+        const shiftDate = logs[0]?.shift_date;
+        const res = await supabase
+          .from("employee_weekly_shifts")
+          .select("shift_start_time, shift_end_time")
+          .eq("employee_auth_id", selected.auth_id)
+          .lte("week_start", shiftDate)
+          .gte("week_end", shiftDate)
+          .maybeSingle();
+
+        if (res.data) {
+          weeklyShiftData = res.data;
+        }
+      }
+
+      const data = (logs ?? []).map((r) => {
+        const hasClockIn = !!r.clock_in_at;
+        const hasClockOut = !!r.clock_out_at;
+        const hasMorningIn = !!r.morning_break_in_at;
+        const hasMorningOut = !!r.morning_break_out_at;
+        const hasAfternoonIn = !!r.afternoon_break_in_at;
+        const hasAfternoonOut = !!r.afternoon_break_out_at;
+        const hasLunchIn = !!r.lunch_break_in_at;
+        const hasLunchOut = !!r.lunch_break_out_at;
+
+        const statusLabel = hasClockOut
+          ? "Shift Completed"
+          : hasMorningIn && !hasMorningOut
+            ? "Morning Break"
+            : hasAfternoonIn && !hasAfternoonOut
+              ? "Afternoon Break"
+              : hasLunchIn && !hasLunchOut
+                ? "Lunch Break"
+                : hasClockIn
+                  ? "Working"
+                  : "Not started";
+
+        const clockInTime = r.clock_in_at
+          ? new Date(r.clock_in_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+        const clockOutTime = r.clock_out_at
+          ? new Date(r.clock_out_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+
+        const considerLate = clockInTime
+          ? isLate(clockInTime, weeklyShiftData?.shift_start_time, 5)
+          : false;
+        const considerUnderTime = clockOutTime
+          ? isUnderTime(clockOutTime, weeklyShiftData?.shift_end_time)
+          : false;
+
+        const clockInDisplay = clockInTime
+          ? `${clockInTime}${considerLate ? " - Late" : ""}`
+          : "";
+        const clockOutDisplay = clockOutTime
+          ? `${clockOutTime}${considerUnderTime ? " - Undertime" : ""}`
+          : "";
+
+        return {
+          Date: r.shift_date,
+          "Scheduled Time Shift": r.scheduled_shift || "-",
+          "Clock In": clockInDisplay,
+          "Morning Break Time (Time In)": r.morning_break_in_at ? new Date(r.morning_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Morning Break Time (Time Out)": r.morning_break_out_at ? new Date(r.morning_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Afternoon Break Time (Time In)": r.afternoon_break_in_at ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Afternoon Break Time (Time Out)": r.afternoon_break_out_at ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Lunch Break Time (Time In)": r.lunch_break_in_at ? new Date(r.lunch_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Lunch Break Time (Time Out)": r.lunch_break_out_at ? new Date(r.lunch_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Clock Out": clockOutDisplay,
+          "Overtime Start": r.overtime_start ? new Date(r.overtime_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Overtime End": r.overtime_end ? new Date(r.overtime_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Status": statusLabel,
+        };
+      });
 
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();

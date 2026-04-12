@@ -146,7 +146,28 @@ export default function MyLogsTab() {
           ? `${clockOutTime}${consideredUnderTime ? " - Undertime" : ""}`
           : "";
 					
-	        return {
+	        const hasClockIn = !!r.clock_in_at;
+        const hasClockOut = !!r.clock_out_at;
+        const hasMorningIn = !!r.morning_break_in_at;
+        const hasMorningOut = !!r.morning_break_out_at;
+        const hasAfternoonIn = !!r.afternoon_break_in_at;
+        const hasAfternoonOut = !!r.afternoon_break_out_at;
+        const hasLunchIn = !!r.lunch_break_in_at;
+        const hasLunchOut = !!r.lunch_break_out_at;
+
+        const statusLabel = hasClockOut
+          ? "Shift Completed"
+          : hasMorningIn && !hasMorningOut
+            ? "Morning Break"
+            : hasAfternoonIn && !hasAfternoonOut
+              ? "Afternoon Break"
+              : hasLunchIn && !hasLunchOut
+                ? "Lunch Break"
+                : hasClockIn
+                  ? "Working"
+                  : "Not started";
+
+        return {
           Date: r.shift_date,
           "Scheduled Time Shift": r.scheduled_shift,
           "Clock In": clockInDisplay,
@@ -199,6 +220,7 @@ export default function MyLogsTab() {
                 minute: "2-digit",
               })
             : "",
+          Status: statusLabel,
         };
       });
 
@@ -255,7 +277,7 @@ export default function MyLogsTab() {
           type="button"
           onClick={downloadExcel}
           disabled={!user || isDownloading}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-70 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold bg-white border border-gray-200 cursor-pointer hover:bg-gray-50 text-gray-700 disabled:opacity-70 disabled:cursor-not-allowed"
         >
           <Download size={18} />
           {isDownloading ? "Exporting..." : "Download Excel"}
@@ -291,10 +313,20 @@ export default function MyLogsTab() {
                 <th className="px-6 py-3 font-bold">Clock Out</th>
                 <th className="px-6 py-3 font-bold">Overtime Start</th>
                 <th className="px-6 py-3 font-bold">Overtime End</th>
+                <th className="px-6 py-3 font-bold text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map((r) => {
+                const hasClockIn = !!r.clock_in_at;
+                const hasClockOut = !!r.clock_out_at;
+                const hasMorningIn = !!r.morning_break_in_at;
+                const hasMorningOut = !!r.morning_break_out_at;
+                const hasAfternoonIn = !!r.afternoon_break_in_at;
+                const hasAfternoonOut = !!r.afternoon_break_out_at;
+                const hasLunchIn = !!r.lunch_break_in_at;
+                const hasLunchOut = !!r.lunch_break_out_at;
+
                 const considerLate = isLate(
                   formatTime(r?.clock_in_at),
                   weeklyShift?.shift_start_time,
@@ -304,6 +336,31 @@ export default function MyLogsTab() {
                   formatTime(r?.clock_out_at),
                   weeklyShift?.shift_end_time,
                 );
+
+                const statusLabel = hasClockOut
+                  ? "Shift Completed"
+                  : hasMorningIn && !hasMorningOut
+                    ? "Morning Break"
+                    : hasAfternoonIn && !hasAfternoonOut
+                      ? "Afternoon Break"
+                      : hasLunchIn && !hasLunchOut
+                        ? "Lunch Break"
+                        : hasClockIn
+                          ? "Working"
+                          : "Not started";
+
+                const statusTone = !hasClockIn
+                  ? "orange"
+                  : hasClockOut
+                    ? "green"
+                    : hasMorningIn && !hasMorningOut
+                      ? "orange"
+                      : hasAfternoonIn && !hasAfternoonOut
+                        ? "orange"
+                        : hasLunchIn && !hasLunchOut
+                          ? "orange"
+                          : "green";
+
                 return (
                   <tr key={r.id} className="text-sm">
                     <td className="px-6 py-4 font-bold text-gray-700">
@@ -352,6 +409,17 @@ export default function MyLogsTab() {
                     <td className="px-6 py-4 text-gray-500">
                       {formatTime(r.overtime_end)}
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                          statusTone === "green"
+                            ? "bg-green-50 text-green-600"
+                            : "bg-orange-50 text-orange-600"
+                        }`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
@@ -359,7 +427,7 @@ export default function MyLogsTab() {
                 <tr>
                   <td
                     className="px-6 py-8 text-gray-400 text-sm font-medium"
-                    colSpan={10}
+                    colSpan={13}
                   >
                     No logs found.
                   </td>
@@ -378,7 +446,7 @@ export default function MyLogsTab() {
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1 || isLoading}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-700 cursor-pointer hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <ChevronLeft size={16} />
               Prev
@@ -387,7 +455,7 @@ export default function MyLogsTab() {
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages || isLoading}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-700 cursor-pointer hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Next
               <ChevronRight size={16} />

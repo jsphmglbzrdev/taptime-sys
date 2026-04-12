@@ -41,7 +41,7 @@ const Header = ({ setIsSidebarOpen }) => {
       <div className="flex items-center">
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="p-2 mr-2 text-gray-500 hover:bg-gray-100 rounded-lg lg:hidden"
+          className="p-2 mr-2 text-gray-500 cursor-pointer hover:bg-gray-100 rounded-lg lg:hidden"
         >
           <Menu size={24} />
         </button>
