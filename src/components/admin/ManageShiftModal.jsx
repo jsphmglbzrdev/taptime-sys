@@ -6,22 +6,6 @@ function displayEmployee(emp) {
   return name || emp?.email || emp?.auth_id || "Unknown";
 }
 
-function saturdayOfWeek(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(`${dateStr}T00:00:00`);
-  const day = d.getDay();
-  const diff = 6 - day;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
-
-function fridayFromSaturday(saturdayStr) {
-  if (!saturdayStr) return "";
-  const d = new Date(`${saturdayStr}T00:00:00`);
-  d.setDate(d.getDate() + 6);
-  return d.toISOString().slice(0, 10);
-}
-
 const SHIFT_OPTIONS = [
   { value: "07:00|16:00", label: "7:00 AM - 4:00 PM" },
   { value: "08:00|17:00", label: "8:00 AM - 5:00 PM" },
@@ -30,43 +14,65 @@ const SHIFT_OPTIONS = [
   { value: "11:00|20:00", label: "11:00 AM - 8:00 PM" },
 ];
 
-const emptySchedule = () => {
-  const weekStart = saturdayOfWeek(new Date().toISOString().slice(0, 10));
-  const weekEnd = fridayFromSaturday(weekStart);
+function emptyForm() {
   return {
+    id: null,
     employee_auth_id: "",
-    week_start: weekStart,
-    week_end: weekEnd,
+    week_start: "",
+    week_end: "",
     shift_template: "",
     shift_start_time: "",
     shift_end_time: "",
   };
-};
+}
 
 export default function ManageShiftModal({
   isManageShiftOpen,
   onClose,
   employees = [],
-  prefillEmployeeId = "",
+  prefillData = null,
+  /** auth_ids that already have a row in `employee_weekly_shifts` (for create flow) */
+  employeeAuthIdsWithShift = [],
   onSave,
   isSaving = false,
 }) {
-  const [form, setForm] = useState(() => emptySchedule());
-  const employeeOptions = useMemo(
-    () => (employees ?? []).slice().sort((a, b) => displayEmployee(a).localeCompare(displayEmployee(b))),
-    [employees]
+  const [form, setForm] = useState(emptyForm);
+  const blockedIds = useMemo(
+    () => new Set(employeeAuthIdsWithShift ?? []),
+    [employeeAuthIdsWithShift],
   );
+  const isEdit = Boolean(prefillData?.id);
+
+  const employeeOptions = useMemo(
+    () =>
+      (employees ?? [])
+        .slice()
+        .sort((a, b) => displayEmployee(a).localeCompare(displayEmployee(b))),
+    [employees],
+  );
+
+  const selectableEmployees = useMemo(() => {
+    if (isEdit) return employeeOptions;
+    return employeeOptions.filter((emp) => !blockedIds.has(emp.auth_id));
+  }, [employeeOptions, blockedIds, isEdit]);
 
   useEffect(() => {
     if (!isManageShiftOpen) return;
-    setForm((prev) => {
-      const next = { ...emptySchedule(), ...prev };
-      if (prefillEmployeeId) next.employee_auth_id = prefillEmployeeId;
-      next.week_start = saturdayOfWeek(next.week_start);
-      next.week_end = fridayFromSaturday(next.week_start);
-      return next;
-    });
-  }, [isManageShiftOpen, prefillEmployeeId]);
+
+    if (prefillData?.id) {
+      setForm({
+        id: prefillData.id,
+        employee_auth_id: prefillData.employee_auth_id || "",
+        week_start: prefillData.week_start || "",
+        week_end: prefillData.week_end || "",
+        shift_template: `${prefillData.shift_start_time}|${prefillData.shift_end_time}`,
+        shift_start_time: prefillData.shift_start_time || "",
+        shift_end_time: prefillData.shift_end_time || "",
+      });
+    } else {
+      setForm(emptyForm());
+    }
+  }, [isManageShiftOpen, prefillData]);
 
   if (!isManageShiftOpen) return null;
 
@@ -89,7 +95,9 @@ export default function ManageShiftModal({
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-3">
           <div>
             <div className="font-black text-xl text-gray-800">Manage Shift</div>
-            <div className="text-xs font-bold text-gray-400">Weekly shift template</div>
+            <div className="text-xs font-bold text-gray-400">
+              Weekly shift template
+            </div>
           </div>
           <button
             type="button"
@@ -109,13 +117,14 @@ export default function ManageShiftModal({
               </label>
               <select
                 value={form.employee_auth_id}
+                disabled={isEdit}
                 onChange={(e) =>
                   setForm((p) => ({ ...p, employee_auth_id: e.target.value }))
                 }
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:bg-gray-100 disabled:text-gray-500"
               >
                 <option value="">Select employee...</option>
-                {employeeOptions.map((emp) => (
+                {(isEdit ? employeeOptions : selectableEmployees).map((emp) => (
                   <option key={emp.auth_id} value={emp.auth_id}>
                     {displayEmployee(emp)}
                   </option>
@@ -125,21 +134,21 @@ export default function ManageShiftModal({
 
             <div className="space-y-1">
               <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
-                Week start (Saturday)
+                Week start
               </label>
               <input
                 type="date"
                 value={form.week_start}
-                onChange={(e) =>
-                  setForm((p) => {
-                    const weekStart = saturdayOfWeek(e.target.value);
-                    return {
-                      ...p,
-                      week_start: weekStart,
-                      week_end: fridayFromSaturday(weekStart),
-                    };
-                  })
-                }
+                onChange={(e) => {
+                  const startDate = e.target.value;
+
+                  
+
+                  setForm((p) => ({
+                    ...p,
+                    week_start: startDate
+                  }));
+                }}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
               />
             </div>
@@ -148,12 +157,17 @@ export default function ManageShiftModal({
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
-                Week end (Friday)
+                Week end
               </label>
               <input
                 type="date"
                 value={form.week_end}
-                disabled
+                onChange={(e) => {
+                  setForm((p) => ({
+                    ...p,
+                    week_end: e.target.value
+                  }));
+                }}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-100 text-gray-500 font-bold"
               />
             </div>

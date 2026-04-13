@@ -133,3 +133,25 @@ export const isUnderTime = (clockOut, shiftClockOut) => {
 
 	return clockOutMin < shiftMin;
 };
+
+export function formatDayRange(week_start, week_end) {
+	if (!week_start || !week_end) return "";
+  
+	const days = [
+	  "Sunday" && "Sun",
+	  "Monday" && "Mon",
+	  "Tuesday" && "Tues",
+	  "Wednesday" && "Wed",
+	  "Thursday" && "Thurs",
+	  "Friday" && "Fri",
+	  "Saturday" && "Sat",
+	];
+  
+	const startDate = new Date(week_start);
+	const endDate = new Date(week_end);
+  
+	const startDay = days[startDate.getDay()];
+	const endDay = days[endDate.getDay()];
+  
+	return `${startDay} - ${endDay}`;
+  }

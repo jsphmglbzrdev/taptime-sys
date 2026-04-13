@@ -16,12 +16,23 @@ import ConfirmationBox from "../../components/ConfirmationBox";
 import MyLogsTab from "./tabs/MyLogsTab";
 import {
   isLate,
-	isUnderTime,
+  isUnderTime,
   evaluateClockIn,
   formatShiftTimeLabel,
   getClockInWindow,
   parseTimeToMinutes,
+  formatDayRange,
 } from "../../utils/shiftSchedule";
+
+/** Local clock: when each break may be started (default schedule). */
+function getBreakStartWindowStatus(date = new Date()) {
+  const hour = date.getHours();
+  return {
+    canStartMorning: hour < 12,
+    canStartLunch: hour === 12,
+    canStartAfternoon: hour >= 13 && hour <= 17,
+  };
+}
 
 export default function UserDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -135,6 +146,11 @@ export default function UserDashboard() {
   const MORNING_BREAK_MIN = 15;
   const AFTERNOON_BREAK_MIN = 15;
   const LUNCH_BREAK_MIN = 60;
+
+  const breakStartWindows = useMemo(
+    () => getBreakStartWindowStatus(currentTime),
+    [currentTime],
+  );
 
   const isShiftActive = !!todayEntry?.clock_in_at && !todayEntry?.clock_out_at;
 
@@ -378,6 +394,26 @@ export default function UserDashboard() {
       if (!isShiftActive) return;
       if (isAnyBreakActive) return;
 
+      const windows = getBreakStartWindowStatus();
+      if (breakType === "morning") {
+        if (!windows.canStartMorning) {
+          toast.error("Morning break is only available before noon (12:00 PM).");
+          return;
+        }
+      } else if (breakType === "lunch") {
+        if (!windows.canStartLunch) {
+          toast.error("Lunch break is only available between 12:00 and 1:00 PM.");
+          return;
+        }
+      } else if (breakType === "afternoon") {
+        if (!windows.canStartAfternoon) {
+          toast.error(
+            "Afternoon break is only available between 1:00 and 5:00 PM.",
+          );
+          return;
+        }
+      }
+
       const now = new Date().toISOString();
 
       let patch = {};
@@ -612,7 +648,8 @@ export default function UserDashboard() {
     if (confirmType === "morning_break_start")
       return {
         title: "Start Morning Break",
-        description: "Confirm you want to start the 15-minute morning break.",
+        description:
+          "Confirm you want to start the 15-minute morning break (available before 12:00 PM).",
       };
     if (confirmType === "morning_break_end")
       return {
@@ -623,7 +660,8 @@ export default function UserDashboard() {
     if (confirmType === "afternoon_break_start")
       return {
         title: "Start Afternoon Break",
-        description: "Confirm you want to start the 15-minute afternoon break.",
+        description:
+          "Confirm you want to start the 15-minute afternoon break (available 1:00–5:00 PM).",
       };
     if (confirmType === "afternoon_break_end")
       return {
@@ -634,7 +672,8 @@ export default function UserDashboard() {
     if (confirmType === "lunch_break_start")
       return {
         title: "Start Lunch Break",
-        description: "Confirm you want to start the 60-minute lunch break.",
+        description:
+          "Confirm you want to start the 60-minute lunch break (available 12:00–1:00 PM).",
       };
     if (confirmType === "lunch_break_end")
       return {
@@ -690,8 +729,12 @@ export default function UserDashboard() {
                         {formatShiftTimeLabel(weeklyShift.shift_end_time)}
                       </p>
                       <p className="text-gray-500 text-sm font-medium">
-                        Week {weeklyShift.week_start} → {weeklyShift.week_end}{" "}
-                        (Sat–Fri)
+                        Week {weeklyShift.week_start} → {weeklyShift.week_end} (
+                        {formatDayRange(
+                          weeklyShift.week_start,
+                          weeklyShift.week_end,
+                        )}
+                        )
                       </p>
                       <p className="text-gray-400 text-xs font-medium">
                         Clock-in opens 1 hour before shift start. After shift
@@ -823,7 +866,7 @@ export default function UserDashboard() {
                             Morning Break
                           </p>
                           <p className="text-gray-500 text-xs font-medium">
-                            {MORNING_BREAK_MIN} minutes
+                            {MORNING_BREAK_MIN} min · default before 12:00 PM
                           </p>
                         </div>
                         {hasMorningBreak && !isMorningBreakActive ? (
@@ -871,7 +914,8 @@ export default function UserDashboard() {
                             isConfirmOpen ||
                             !isShiftActive ||
                             isAnyBreakActive ||
-                            hasMorningBreak
+                            hasMorningBreak ||
+                            !breakStartWindows.canStartMorning
                           }
                           className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
@@ -887,7 +931,7 @@ export default function UserDashboard() {
                             Lunch Break
                           </p>
                           <p className="text-gray-500 text-xs font-medium">
-                            {LUNCH_BREAK_MIN} minutes
+                            {LUNCH_BREAK_MIN} min · default 12:00–1:00 PM
                           </p>
                         </div>
                         {hasLunchBreak && !isLunchBreakActive ? (
@@ -935,7 +979,8 @@ export default function UserDashboard() {
                             isConfirmOpen ||
                             !isShiftActive ||
                             isAnyBreakActive ||
-                            hasLunchBreak
+                            hasLunchBreak ||
+                            !breakStartWindows.canStartLunch
                           }
                           className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
@@ -951,7 +996,7 @@ export default function UserDashboard() {
                             Afternoon Break
                           </p>
                           <p className="text-gray-500 text-xs font-medium">
-                            {AFTERNOON_BREAK_MIN} minutes
+                            {AFTERNOON_BREAK_MIN} min · default 1:00–5:00 PM
                           </p>
                         </div>
                         {hasAfternoonBreak && !isAfternoonBreakActive ? (
@@ -999,7 +1044,8 @@ export default function UserDashboard() {
                             isConfirmOpen ||
                             !isShiftActive ||
                             isAnyBreakActive ||
-                            hasAfternoonBreak
+                            hasAfternoonBreak ||
+                            !breakStartWindows.canStartAfternoon
                           }
                           className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
                         >
@@ -1074,15 +1120,12 @@ export default function UserDashboard() {
                           const hasLunchIn = !!log.lunch_break_in_at;
                           const hasLunchOut = !!log.lunch_break_out_at;
 
-                          
-
                           const considerLate = isLate(
                             formatTime(log?.clock_in_at), // "04:41 PM"
                             weeklyShift?.shift_start_time, // "07:00:00"
                             5,
                           );
 
-                   
                           const considerUnderTime = isUnderTime(
                             formatTime(log?.clock_out_at),
                             weeklyShift?.shift_end_time,
