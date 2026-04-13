@@ -79,9 +79,39 @@ function OverviewTab({ currentTime }) {
 
   useEffect(() => {
     loadTodayEntries();
-    const intervalId = window.setInterval(loadTodayEntries, 30000);
-    return () => window.clearInterval(intervalId);
   }, [loadTodayEntries]);
+
+  useEffect(() => {
+    const overviewChannel = supabase
+      .channel("admin-overview-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "time_entries",
+        },
+        () => {
+          loadTodayEntries();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_profiles",
+        },
+        () => {
+          loadEmployees();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(overviewChannel);
+    };
+  }, [loadEmployees, loadTodayEntries]);
 
   useEffect(() => {
     let cancelled = false;
