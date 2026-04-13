@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Clock, Coffee, Sunset, SunMedium } from "lucide-react";
+import { Activity, Clock, Coffee, RefreshCw, Sunset, SunMedium } from "lucide-react";
 import {
   listTimeEntriesByAuthId,
   listTimeEntriesByShiftDate,
@@ -27,6 +27,7 @@ function OverviewTab({ currentTime }) {
   const [isLogsOpen, setIsLogsOpen] = useState(false);
   const [logs, setLogs] = useState([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const todayShiftDate = useMemo(
     () => currentTime.toLocaleDateString("en-CA"),
@@ -80,6 +81,18 @@ function OverviewTab({ currentTime }) {
   useEffect(() => {
     loadTodayEntries();
   }, [loadTodayEntries]);
+
+  const refreshOverview = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([loadEmployees(), loadTodayEntries()]);
+      toast.success("Monitoring dashboard refreshed.");
+    } catch {
+      toast.error("Failed to refresh monitoring dashboard.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadEmployees, loadTodayEntries]);
 
   useEffect(() => {
     const overviewChannel = supabase
@@ -459,15 +472,26 @@ function OverviewTab({ currentTime }) {
           <h2 className="text-2xl font-black text-gray-800 tracking-tight">Monitoring Dashboard</h2>
           <p className="text-gray-500 text-sm font-medium">Real-time status for {currentTime.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
-        <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 flex items-center gap-3 shadow-sm">
-          <Clock size={18} className="text-orange-500" />
-          <span className="text-lg font-bold tabular-nums">
-            {currentTime.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            })}
-          </span>
+        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
+          <button
+            type="button"
+            onClick={refreshOverview}
+            disabled={isRefreshing}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
+          <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 flex items-center gap-3 shadow-sm">
+            <Clock size={18} className="text-orange-500" />
+            <span className="text-lg font-bold tabular-nums">
+              {currentTime.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+            </span>
+          </div>
         </div>
       </div>
 
