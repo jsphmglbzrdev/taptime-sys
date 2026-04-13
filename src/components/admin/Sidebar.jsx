@@ -1,9 +1,20 @@
-import { Clock, LayoutDashboard, Users, Plus, LogOut, X, User2, Timer, TruckElectricIcon } from "lucide-react";
+import {
+  Clock,
+  LayoutDashboard,
+  Users,
+  Plus,
+  LogOut,
+  X,
+  User2,
+  Timer,
+  TruckElectricIcon,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
 import ConfirmationBox from "../ConfirmationBox";
 import { useNavigate } from "react-router-dom";
+import imgLogo from "../../../public/surf2sawa.png";
 
 export default function Sidebar({
   isSidebarOpen,
@@ -11,7 +22,6 @@ export default function Sidebar({
   activeTab,
   setActiveTab,
 }) {
-	
   const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -46,10 +56,10 @@ export default function Sidebar({
         <div className="flex flex-col h-full">
           <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white">
-                <Clock size={18} strokeWidth={3} />
+              <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center text-white">
+                <img src={imgLogo} alt="surf2sawa-logo" />
               </div>
-              <span className="text-xl font-bold text-orange-600 tracking-tight">
+              <span className="text-xl font-extrabold text-orange-500 tracking-tight">
                 TapTime
               </span>
             </div>

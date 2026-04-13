@@ -4,17 +4,17 @@ export const CLOCK_IN_EARLY_MS = 60 * 60 * 1000;
 export const LATE_GRACE_MS = 5 * 60 * 1000;
 
 export function normalizeTimeString(timeStr) {
-	if (timeStr == null || timeStr === "") return null;
-	const s = String(timeStr).trim();
-	if (s.length === 5) return `${s}:00`;
-	return s.length >= 8 ? s.slice(0, 8) : s;
+  if (timeStr == null || timeStr === "") return null;
+  const s = String(timeStr).trim();
+  if (s.length === 5) return `${s}:00`;
+  return s.length >= 8 ? s.slice(0, 8) : s;
 }
 
 /** Local Date for a calendar day + time-of-day (from Postgres `time`). */
 export function localDateTimeFromShiftDateAndTime(shiftDate, timeStr) {
-	const t = normalizeTimeString(timeStr);
-	if (!shiftDate || !t) return null;
-	return new Date(`${shiftDate}T${t}`);
+  const t = normalizeTimeString(timeStr);
+  if (!shiftDate || !t) return null;
+  return new Date(`${shiftDate}T${t}`);
 }
 
 /**
@@ -22,136 +22,147 @@ export function localDateTimeFromShiftDateAndTime(shiftDate, timeStr) {
  * @param {string} calendarDate YYYY-MM-DD
  */
 export function findWeeklyShiftForDate(rows, calendarDate) {
-	if (!rows?.length || !calendarDate) return null;
-	return (
-		rows.find(
-			(r) => r.week_start <= calendarDate && calendarDate <= r.week_end,
-		) ?? null
-	);
+  if (!rows?.length || !calendarDate) return null;
+  return (
+    rows.find(
+      (r) => r.week_start <= calendarDate && calendarDate <= r.week_end,
+    ) ?? null
+  );
 }
 
 export function getClockInWindow(shiftDate, shiftStartTime, shiftEndTime) {
-	const shiftStart = localDateTimeFromShiftDateAndTime(
-		shiftDate,
-		shiftStartTime,
-	);
-	const shiftEnd = localDateTimeFromShiftDateAndTime(shiftDate, shiftEndTime);
-	if (!shiftStart || !shiftEnd) return null;
-	return {
-		earliestClockIn: new Date(shiftStart.getTime() - CLOCK_IN_EARLY_MS),
-		shiftStart,
-		graceEnds: new Date(shiftStart.getTime() + LATE_GRACE_MS),
-		latestClockIn: shiftEnd,
-	};
+  const shiftStart = localDateTimeFromShiftDateAndTime(
+    shiftDate,
+    shiftStartTime,
+  );
+  const shiftEnd = localDateTimeFromShiftDateAndTime(shiftDate, shiftEndTime);
+  if (!shiftStart || !shiftEnd) return null;
+  return {
+    earliestClockIn: new Date(shiftStart.getTime() - CLOCK_IN_EARLY_MS),
+    shiftStart,
+    graceEnds: new Date(shiftStart.getTime() + LATE_GRACE_MS),
+    latestClockIn: shiftEnd,
+  };
 }
 
 /**
  * @returns {{ allowed: boolean, reason: string, late?: boolean, window?: object }}
  */
 export function evaluateClockIn(nowMs, window) {
-	if (!window) {
-		return { allowed: true, reason: "no_schedule" };
-	}
-	if (nowMs < window.earliestClockIn.getTime()) {
-		return { allowed: false, reason: "too_early", window };
-	}
-	if (nowMs > window.latestClockIn.getTime()) {
-		return { allowed: false, reason: "past_shift_end", window };
-	}
-	const late = nowMs > window.graceEnds.getTime();
-	return {
-		allowed: true,
-		reason: late ? "late_grace_passed" : "on_time",
-		late,
-		window,
-	};
+  if (!window) {
+    return { allowed: true, reason: "no_schedule" };
+  }
+  if (nowMs < window.earliestClockIn.getTime()) {
+    return { allowed: false, reason: "too_early", window };
+  }
+  if (nowMs > window.latestClockIn.getTime()) {
+    return { allowed: false, reason: "past_shift_end", window };
+  }
+  const late = nowMs > window.graceEnds.getTime();
+  return {
+    allowed: true,
+    reason: late ? "late_grace_passed" : "on_time",
+    late,
+    window,
+  };
 }
 
 /** Whole minutes worked past scheduled shift end on that calendar day. */
 export function computeOvertimeMinutes(
-	clockOutIso,
-	shiftDate,
-	shiftEndTimeStr,
+  clockOutIso,
+  shiftDate,
+  shiftEndTimeStr,
 ) {
-	const shiftEnd = localDateTimeFromShiftDateAndTime(
-		shiftDate,
-		shiftEndTimeStr,
-	);
-	if (!shiftEnd || !clockOutIso) return 0;
-	const diffMs = new Date(clockOutIso).getTime() - shiftEnd.getTime();
-	if (diffMs <= 0) return 0;
-	return Math.round(diffMs / 60000);
+  const shiftEnd = localDateTimeFromShiftDateAndTime(
+    shiftDate,
+    shiftEndTimeStr,
+  );
+  if (!shiftEnd || !clockOutIso) return 0;
+  const diffMs = new Date(clockOutIso).getTime() - shiftEnd.getTime();
+  if (diffMs <= 0) return 0;
+  return Math.round(diffMs / 60000);
 }
 
 export function formatShiftTimeLabel(timeStr) {
-	const t = normalizeTimeString(timeStr);
-	if (!t) return "-";
-	const d = new Date(`2000-01-01T${t}`);
-	if (Number.isNaN(d.getTime())) return timeStr;
-	return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const t = normalizeTimeString(timeStr);
+  if (!t) return "-";
+  const d = new Date(`2000-01-01T${t}`);
+  if (Number.isNaN(d.getTime())) return timeStr;
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export const parseTimeToMinutes = (time) => {
-	// Handle invalid/empty inputs
-	if (!time || time === "-" || typeof time !== "string") return 0;
+  // Handle invalid/empty inputs
+  if (!time || time === "-" || typeof time !== "string") return 0;
 
-	// Handle "04:41 PM"
-	if (time.includes("AM") || time.includes("PM")) {
-		let [hourMin, modifier] = time.split(" ");
-		if (!hourMin || !modifier) return 0;
-		let [hours, minutes] = hourMin.split(":").map(Number);
-		if (isNaN(hours) || isNaN(minutes)) return 0;
+  // Handle "04:41 PM"
+  if (time.includes("AM") || time.includes("PM")) {
+    let [hourMin, modifier] = time.split(" ");
+    if (!hourMin || !modifier) return 0;
+    let [hours, minutes] = hourMin.split(":").map(Number);
+    if (isNaN(hours) || isNaN(minutes)) return 0;
 
-		if (modifier === "PM" && hours !== 12) hours += 12;
-		if (modifier === "AM" && hours === 12) hours = 0;
+    if (modifier === "PM" && hours !== 12) hours += 12;
+    if (modifier === "AM" && hours === 12) hours = 0;
 
-		return hours * 60 + minutes;
-	}
+    return hours * 60 + minutes;
+  }
 
-	// Handle "07:00:00"
-	const parts = time.split(":");
-	if (parts.length < 2) return 0;
-	const [hours, minutes] = parts.map(Number);
-	if (isNaN(hours) || isNaN(minutes)) return 0;
-	return hours * 60 + minutes;
+  // Handle "07:00:00"
+  const parts = time.split(":");
+  if (parts.length < 2) return 0;
+  const [hours, minutes] = parts.map(Number);
+  if (isNaN(hours) || isNaN(minutes)) return 0;
+  return hours * 60 + minutes;
 };
 
-export const isLate = (
-	clockIn,
-	shiftStart,
-	graceMinutes = 0,
-) => {
-	const clockInMin = parseTimeToMinutes(clockIn);
-	const shiftMin = parseTimeToMinutes(shiftStart);
+export const isLate = (clockIn, shiftStart, graceMinutes = 0) => {
+  const clockInMin = parseTimeToMinutes(clockIn);
+  const shiftMin = parseTimeToMinutes(shiftStart);
 
-	return clockInMin > shiftMin + graceMinutes;
+  return clockInMin > shiftMin + graceMinutes;
 };
 
 export const isUnderTime = (clockOut, shiftClockOut) => {
-	const clockOutMin = parseTimeToMinutes(clockOut);
-	const shiftMin = parseTimeToMinutes(shiftClockOut);
+  const clockOutMin = parseTimeToMinutes(clockOut);
+  const shiftMin = parseTimeToMinutes(shiftClockOut);
 
-	return clockOutMin < shiftMin;
+  return clockOutMin < shiftMin;
 };
 
 export function formatDayRange(week_start, week_end) {
-	if (!week_start || !week_end) return "";
-  
-	const days = [
-	  "Sunday" && "Sun",
-	  "Monday" && "Mon",
-	  "Tuesday" && "Tues",
-	  "Wednesday" && "Wed",
-	  "Thursday" && "Thurs",
-	  "Friday" && "Fri",
-	  "Saturday" && "Sat",
-	];
-  
-	const startDate = new Date(week_start);
-	const endDate = new Date(week_end);
-  
-	const startDay = days[startDate.getDay()];
-	const endDay = days[endDate.getDay()];
-  
-	return `${startDay} - ${endDay}`;
-  }
+  if (!week_start || !week_end) return "";
+
+  const days = [
+    "Sunday" && "Sun",
+    "Monday" && "Mon",
+    "Tuesday" && "Tues",
+    "Wednesday" && "Wed",
+    "Thursday" && "Thurs",
+    "Friday" && "Fri",
+    "Saturday" && "Sat",
+  ];
+
+  const startDate = new Date(week_start);
+  const endDate = new Date(week_end);
+
+  const startDay = days[startDate.getDay()];
+  const endDay = days[endDate.getDay()];
+
+  return `${startDay} - ${endDay}`;
+}
+
+export function formatReadableDateTime(dateString) {
+  if (!dateString) return "";
+
+  const date = new Date(dateString);
+
+  return date.toLocaleString("en-PH", {
+    year: "numeric",
+    month: "long", // "April"
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}

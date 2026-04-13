@@ -1,8 +1,8 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { Menu } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { getCurrentUser } from "../../utils/auth";
+import { AVATAR_UPDATED_EVENT, resolveAvatarSrc } from "../../utils/avatar";
 
 const Header = ({ setIsSidebarOpen }) => {
   const { user } = useAuth();
@@ -19,6 +19,11 @@ const Header = ({ setIsSidebarOpen }) => {
     };
 
     loadProfile();
+    window.addEventListener(AVATAR_UPDATED_EVENT, loadProfile);
+
+    return () => {
+      window.removeEventListener(AVATAR_UPDATED_EVENT, loadProfile);
+    };
   }, [user]);
 
   const displayName = useMemo(() => {
@@ -35,6 +40,24 @@ const Header = ({ setIsSidebarOpen }) => {
     const second = parts.length > 1 ? parts[1]?.[0] : "";
     return (first + second).toUpperCase();
   }, [displayName]);
+  const avatarUrl = profile?.avatar_url ?? "";
+  const [avatarSrc, setAvatarSrc] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const nextAvatarSrc = await resolveAvatarSrc(avatarUrl);
+        if (!cancelled) setAvatarSrc(nextAvatarSrc);
+      } catch {
+        if (!cancelled) setAvatarSrc("");
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [avatarUrl]);
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 shrink-0">
@@ -59,9 +82,17 @@ const Header = ({ setIsSidebarOpen }) => {
             {profile?.role ?? ""}
           </p>
         </div>
-        <div className="w-10 h-10 rounded-full bg-orange-100 border-2 border-white shadow-sm flex items-center justify-center text-orange-600 font-bold">
-          {initials}
-        </div>
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt="Profile"
+            className="w-10 h-10 rounded-full object-cover object-center border-2 border-orange-100 shadow-sm"
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-orange-50 border-2 border-orange-100 shadow-sm flex items-center justify-center text-orange-600 font-bold">
+            {initials}
+          </div>
+        )}
       </div>
     </header>
   );

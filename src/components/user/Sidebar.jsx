@@ -5,13 +5,19 @@ import {
   LogOut,
   X,
   LayoutDashboard,
+  UserCheck2,
 } from "lucide-react";
 import ConfirmationBox from "../ConfirmationBox";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
 import { useNavigate } from "react-router-dom";
-
-const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) => {
+import imgLogo from "../../../public/surf2sawa.png"
+const Sidebar = ({
+  isSidebarOpen,
+  setIsSidebarOpen,
+  activeTab,
+  setActiveTab,
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
   const { setLoading } = useLoading();
@@ -39,10 +45,12 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) =
           {/* Logo Section */}
           <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white">
-                <Clock size={18} strokeWidth={3} />
+              <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center text-white">
+                <img src={imgLogo} alt="surf2sawa-logo" />
               </div>
-              <span className="text-xl font-bold text-orange-600">TapTime</span>
+              <span className="text-xl font-extrabold text-orange-500 tracking-tight">
+                TapTime
+              </span>
             </div>
             <button
               onClick={() => setIsSidebarOpen(false)}
@@ -69,6 +77,15 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) =
               active={activeTab === "My Logs"}
               onClick={() => {
                 setActiveTab("My Logs");
+                setIsSidebarOpen(false);
+              }}
+            />
+            <NavItem
+              icon={<UserCheck2 size={20} />}
+              label="Profile"
+              active={activeTab === "Profile"}
+              onClick={() => {
+                setActiveTab("Profile");
                 setIsSidebarOpen(false);
               }}
             />
@@ -101,7 +118,7 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab }) =
         buttonText="Logout"
         isModalOpen={isModalOpen}
         setIsModalOpen={setIsModalOpen}
-				handleAction={handleLogout}
+        handleAction={handleLogout}
       />
     </>
   );

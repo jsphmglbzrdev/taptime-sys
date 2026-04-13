@@ -1,10 +1,12 @@
 import { Menu } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getCurrentUser } from "../../utils/auth";
+import { AVATAR_UPDATED_EVENT, resolveAvatarSrc } from "../../utils/avatar";
 
 export default function Header({ setIsSidebarOpen, activeTab }) {
   const [currentUser, setCurrentUser] = useState(null);
+  const [avatarSrc, setAvatarSrc] = useState("");
   const { user } = useAuth();
 
   useEffect(() => {
@@ -21,7 +23,41 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
     };
 
     fetchCurrentUser();
+    window.addEventListener(AVATAR_UPDATED_EVENT, fetchCurrentUser);
+
+    return () => {
+      window.removeEventListener(AVATAR_UPDATED_EVENT, fetchCurrentUser);
+    };
   }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAvatarSrc = async () => {
+      try {
+        const nextAvatarSrc = await resolveAvatarSrc(currentUser?.avatar_url);
+        if (!cancelled) setAvatarSrc(nextAvatarSrc);
+      } catch {
+        if (!cancelled) setAvatarSrc("");
+      }
+    };
+
+    loadAvatarSrc();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.avatar_url]);
+
+  const initials = useMemo(() => {
+    const name = `${currentUser?.first_name ?? ""} ${currentUser?.last_name ?? ""}`
+      .trim()
+      || currentUser?.email
+      || "";
+    const parts = name.split(" ").filter(Boolean).slice(0, 2);
+    if (parts.length === 0) return "A";
+    return parts.map((part) => part[0]).join("").toUpperCase();
+  }, [currentUser?.email, currentUser?.first_name, currentUser?.last_name]);
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 shrink-0">
@@ -47,9 +83,17 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
             {currentUser?.role}
           </p>
         </div>
-        <div className="w-10 h-10 rounded-xl bg-orange-500 text-white shadow-lg shadow-orange-100 flex items-center justify-center font-bold">
-          A
-        </div>
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt="Admin profile"
+            className="w-10 h-10 rounded-full object-cover object-center border-2 border-orange-100 shadow-sm"
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-orange-500 text-white shadow-lg shadow-orange-100 flex items-center justify-center font-bold">
+            {initials}
+          </div>
+        )}
       </div>
     </header>
   );

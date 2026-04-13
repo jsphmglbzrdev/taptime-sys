@@ -1,7 +1,32 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Download, X } from "lucide-react";
+import * as XLSX from "xlsx";
+import { toast } from "react-toastify";
 import { supabase } from "../../utils/supabase";
-import { formatShiftTimeLabel } from "../../utils/shiftSchedule";
+import {
+  formatShiftTimeLabel,
+  formatReadableDateTime,
+} from "../../utils/shiftSchedule";
+
+/** Headers and cell values match the “Previous versions” table in this modal. */
+const PREVIOUS_VERSIONS_TABLE_HEADERS = [
+  "Date Created",
+  "Week Start",
+  "Week End",
+  "Time Shift",
+];
+
+function displayedShiftRange(row) {
+  if (!row) return "";
+  return `${formatShiftTimeLabel(row.shift_start_time)} - ${formatShiftTimeLabel(row.shift_end_time)}`;
+}
+
+function sanitizeFilePart(label) {
+  return String(label || "employee")
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "_")
+    .slice(0, 80);
+}
 
 export default function ShiftHistoryModal({
   isOpen,
@@ -30,7 +55,7 @@ export default function ShiftHistoryModal({
         supabase
           .from("employee_weekly_shift_history")
           .select(
-            "id, week_start, week_end, shift_start_time, shift_end_time, superseded_at",
+            "id, shift_created_at, week_start, week_end, shift_start_time, shift_end_time, superseded_at",
           )
           .eq("employee_auth_id", employeeAuthId)
           .order("superseded_at", { ascending: false }),
@@ -49,15 +74,40 @@ export default function ShiftHistoryModal({
     }
   }, [employeeAuthId]);
 
+  const handleDownload = useCallback(() => {
+    if (!employeeAuthId) return;
+    if (historyRows.length === 0) {
+      toast.info("No previous versions to download.");
+      return;
+    }
+    try {
+      const wb = XLSX.utils.book_new();
+      const sheetData = [
+        PREVIOUS_VERSIONS_TABLE_HEADERS,
+        ...historyRows.map((r) => [
+          formatReadableDateTime(r.shift_created_at),
+          r.week_start,
+          r.week_end,
+          displayedShiftRange(r),
+        ]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(wb, ws, "Previous versions");
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      const fileName = `shift_history_${sanitizeFilePart(employeeLabel)}_${stamp}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch {
+      toast.error("Could not download shift history.");
+    }
+  }, [employeeAuthId, employeeLabel, historyRows]);
+
   useEffect(() => {
     if (!isOpen || !employeeAuthId) return;
     load();
   }, [isOpen, employeeAuthId, load]);
 
   if (!isOpen) return null;
-
-  const rowTime = (r) =>
-    `${formatShiftTimeLabel(r.shift_start_time)} - ${formatShiftTimeLabel(r.shift_end_time)}`;
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
@@ -99,6 +149,8 @@ export default function ShiftHistoryModal({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-[10px] uppercase tracking-widest text-gray-400 bg-gray-50/80">
+                        <th className="px-4 py-2 font-bold">Date Created</th>
+
                         <th className="px-4 py-2 font-bold">Week Start</th>
                         <th className="px-4 py-2 font-bold">Week End</th>
                         <th className="px-4 py-2 font-bold">Time Shift</th>
@@ -106,9 +158,19 @@ export default function ShiftHistoryModal({
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       <tr>
-                        <td className="px-4 py-3 text-gray-700 font-medium">{current.week_start}</td>
-                        <td className="px-4 py-3 text-gray-700 font-medium">{current.week_end}</td>
-                        <td className="px-4 py-3 text-gray-700 font-medium">{rowTime(current)}</td>
+                        <td className="px-4 py-3 text-gray-700 font-medium">
+                          {formatReadableDateTime(current.created_at)}
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-700 font-medium">
+                          {current.week_start}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 font-medium">
+                          {current.week_end}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 font-medium">
+                          {displayedShiftRange(current)}
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -132,29 +194,29 @@ export default function ShiftHistoryModal({
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-[10px] uppercase tracking-widest text-gray-400 bg-gray-50/80">
+                          <th className="px-4 py-2 font-bold">Date Created</th>
+
                           <th className="px-4 py-2 font-bold">Week Start</th>
                           <th className="px-4 py-2 font-bold">Week End</th>
-                          <th className="px-4 py-2 font-bold">Shift</th>
-                          <th className="px-4 py-2 font-bold">Archived</th>
+                          <th className="px-4 py-2 font-bold">Time Shift</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
                         {historyRows.map((r) => (
                           <tr key={r.id}>
                             <td className="px-4 py-3 text-gray-700 font-medium">
+                              {formatReadableDateTime(r.shift_created_at)}
+                            </td>
+                            <td className="px-4 py-3 text-gray-700 font-medium">
                               {r.week_start}
                             </td>
                             <td className="px-4 py-3 text-gray-700 font-medium">
                               {r.week_end}
                             </td>
-                            <td className="px-4 py-3 text-gray-600">
-                              {rowTime(r)}
+                            <td className="px-4 py-3 text-gray-600 font-medium">
+                              {displayedShiftRange(r)}
                             </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs">
-                              {r.superseded_at
-                                ? new Date(r.superseded_at).toLocaleString()
-                                : "—"}
-                            </td>
+                          
                           </tr>
                         ))}
                       </tbody>
@@ -166,7 +228,16 @@ export default function ShiftHistoryModal({
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
+        <div className="px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-end gap-3">
+          <button
+            type="button"
+            disabled={isLoading || historyRows.length === 0}
+            onClick={handleDownload}
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-black border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download size={18} aria-hidden />
+            Download
+          </button>
           <button
             type="button"
             onClick={onClose}

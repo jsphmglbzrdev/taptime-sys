@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "react-toastify";
@@ -154,18 +160,26 @@ export default function MyLogsTab() {
         const hasAfternoonOut = !!r.afternoon_break_out_at;
         const hasLunchIn = !!r.lunch_break_in_at;
         const hasLunchOut = !!r.lunch_break_out_at;
+        const hasOvertimeIn = !!r.overtime_start;
+        const hasOvertimeOut = !!r.overtime_end;
+        const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
+        const hasOvertimeCompleted = hasOvertimeIn && hasOvertimeOut;
 
-        const statusLabel = hasClockOut
-          ? "Shift Completed"
-          : hasMorningIn && !hasMorningOut
-            ? "Morning Break"
-            : hasAfternoonIn && !hasAfternoonOut
-              ? "Afternoon Break"
-              : hasLunchIn && !hasLunchOut
-                ? "Lunch Break"
-                : hasClockIn
-                  ? "Working"
-                  : "Not started";
+        const statusLabel = hasOvertimeCompleted
+          ? "Shift Completed with Overtime"
+          : hasOvertimeActive
+            ? "Overtime"
+            : hasClockOut
+              ? "Shift Completed"
+              : hasMorningIn && !hasMorningOut
+                ? "Morning Break"
+                : hasAfternoonIn && !hasAfternoonOut
+                  ? "Afternoon Break"
+                  : hasLunchIn && !hasLunchOut
+                    ? "Lunch Break"
+                    : hasClockIn
+                      ? "Working"
+                      : "Not started";
 
         return {
           Date: r.shift_date,
@@ -326,6 +340,10 @@ export default function MyLogsTab() {
                 const hasAfternoonOut = !!r.afternoon_break_out_at;
                 const hasLunchIn = !!r.lunch_break_in_at;
                 const hasLunchOut = !!r.lunch_break_out_at;
+                const hasOvertimeIn = !!r.overtime_start;
+                const hasOvertimeOut = !!r.overtime_end;
+                const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
+                const hasOvertimeCompleted = hasOvertimeIn && hasOvertimeOut;
 
                 const considerLate = isLate(
                   formatTime(r?.clock_in_at),
@@ -337,29 +355,35 @@ export default function MyLogsTab() {
                   weeklyShift?.shift_end_time,
                 );
 
-                const statusLabel = hasClockOut
-                  ? "Shift Completed"
-                  : hasMorningIn && !hasMorningOut
-                    ? "Morning Break"
-                    : hasAfternoonIn && !hasAfternoonOut
-                      ? "Afternoon Break"
-                      : hasLunchIn && !hasLunchOut
-                        ? "Lunch Break"
-                        : hasClockIn
-                          ? "Working"
-                          : "Not started";
+                const statusLabel = hasOvertimeCompleted
+                  ? "Shift Completed with Overtime"
+                  : hasOvertimeActive
+                    ? "Overtime"
+                    : hasClockOut
+                      ? "Shift Completed"
+                      : hasMorningIn && !hasMorningOut
+                        ? "Morning Break"
+                        : hasAfternoonIn && !hasAfternoonOut
+                          ? "Afternoon Break"
+                          : hasLunchIn && !hasLunchOut
+                            ? "Lunch Break"
+                            : hasClockIn
+                              ? "Working"
+                              : "Not started";
 
                 const statusTone = !hasClockIn
                   ? "orange"
-                  : hasClockOut
-                    ? "green"
-                    : hasMorningIn && !hasMorningOut
-                      ? "orange"
-                      : hasAfternoonIn && !hasAfternoonOut
+                  : hasOvertimeActive
+                    ? "orange"
+                    : hasOvertimeCompleted || hasClockOut
+                      ? "green"
+                      : hasMorningIn && !hasMorningOut
                         ? "orange"
-                        : hasLunchIn && !hasLunchOut
+                        : hasAfternoonIn && !hasAfternoonOut
                           ? "orange"
-                          : "green";
+                          : hasLunchIn && !hasLunchOut
+                            ? "orange"
+                            : "green";
 
                 return (
                   <tr key={r.id} className="text-sm">
@@ -417,6 +441,11 @@ export default function MyLogsTab() {
                             : "bg-orange-50 text-orange-600"
                         }`}
                       >
+                        {statusTone === "green" ? (
+                          <CheckCircle2 size={12} />
+                        ) : (
+                          <AlertCircle size={12} />
+                        )}
                         {statusLabel}
                       </span>
                     </td>

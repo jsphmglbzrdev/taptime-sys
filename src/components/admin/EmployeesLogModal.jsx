@@ -1,4 +1,4 @@
-import {Download, X} from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, X } from "lucide-react";
 import { isLate, isUnderTime } from "../../utils/shiftSchedule";
 import { useEffect, useState } from "react";
 import { supabase } from "../../utils/supabase";
@@ -24,10 +24,20 @@ function calculateStatusWithColor(row) {
   const hasAfternoonOut = !!row.afternoon_break_out_at;
   const hasLunchIn = !!row.lunch_break_in_at;
   const hasLunchOut = !!row.lunch_break_out_at;
+  const hasOvertimeIn = !!row.overtime_start;
+  const hasOvertimeOut = !!row.overtime_end;
+  const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
+  const hasOvertimeCompleted = hasOvertimeIn && hasOvertimeOut;
 
   let statusLabel, statusTone;
 
-  if (hasClockOut) {
+  if (hasOvertimeCompleted) {
+    statusLabel = "Shift Completed with Overtime";
+    statusTone = "green";
+  } else if (hasOvertimeActive) {
+    statusLabel = "Overtime";
+    statusTone = "orange";
+  } else if (hasClockOut) {
     statusLabel = "Shift Completed";
     statusTone = "green";
   } else if (hasMorningIn && !hasMorningOut) {
@@ -100,28 +110,28 @@ function EmployeeLogsModal({
       />
 
       <div className="relative w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white border border-slate-100 shadow-2xl">
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-4 sm:px-6 py-4 border-b border-gray-100">
           <div className="min-w-0">
-            <h3 className="text-lg font-black text-gray-800 truncate">
+            <h3 className="text-base sm:text-lg font-black text-gray-800 break-words">
               {displayName} — Time Logs
             </h3>
-            <p className="text-sm text-gray-500 truncate">{employee.email}</p>
+            <p className="text-xs sm:text-sm text-gray-500 break-all">{employee.email}</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex w-full sm:w-auto items-stretch sm:items-center gap-2">
             <button
               type="button"
               onClick={onExport}
               disabled={isExporting}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed text-sm sm:text-base"
             >
-              <Download size={18} />
+              <Download size={18} className="shrink-0" />
               {isExporting ? "Exporting..." : "Download Excel"}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+              className="shrink-0 p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
               title="Close"
             >
               <X size={18} />
@@ -230,6 +240,11 @@ function EmployeeLogsModal({
                             : "bg-orange-50 text-orange-600"
                         }`}
                       >
+                        {statusTone === "green" ? (
+                          <CheckCircle2 size={12} />
+                        ) : (
+                          <AlertCircle size={12} />
+                        )}
                         {statusLabel}
                       </span>
                     </td>

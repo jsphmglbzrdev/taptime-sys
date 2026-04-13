@@ -10,10 +10,12 @@ import Sidebar from "../../components/user/Sidebar";
 import Header from "../../components/user/Header";
 import { useAuth } from "../../context/AuthContext";
 import { useLoading } from "../../context/LoadingContext";
+import { signOut } from "../../utils/auth";
 import { supabase } from "../../utils/supabase";
 import { toast } from "react-toastify";
 import ConfirmationBox from "../../components/ConfirmationBox";
 import MyLogsTab from "./tabs/MyLogsTab";
+import ProfileTab from "./tabs/ProfileTab";
 import {
   isLate,
   isUnderTime,
@@ -47,13 +49,14 @@ export default function UserDashboard() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [confirmType, setConfirmType] = useState(null);
   const [weeklyShift, setWeeklyShift] = useState(null);
-  const [isOvertimeActive, setIsOvertimeActive] = useState(false);
   const autoEndedRef = useRef({
     morning: false,
     afternoon: false,
     lunch: false,
   });
   const lastAutoResetKeyRef = useRef(null);
+  const todayEntryRef = useRef(null);
+  const updateTodayEntryRef = useRef(null);
 
   // Real-time clock effect
   useEffect(() => {
@@ -146,6 +149,8 @@ export default function UserDashboard() {
   const MORNING_BREAK_MIN = 15;
   const AFTERNOON_BREAK_MIN = 15;
   const LUNCH_BREAK_MIN = 60;
+  /** After break allowance + this many minutes with no break-out, end break and sign out. */
+  const FORGOT_BREAK_SIGNOUT_AFTER_MIN = 15;
 
   const breakStartWindows = useMemo(
     () => getBreakStartWindowStatus(currentTime),
@@ -155,6 +160,9 @@ export default function UserDashboard() {
   const isShiftActive = !!todayEntry?.clock_in_at && !todayEntry?.clock_out_at;
 
   const isShiftCompleted = !!todayEntry?.clock_out_at;
+  const hasOvertimeStart = !!todayEntry?.overtime_start;
+  const hasOvertimeEnd = !!todayEntry?.overtime_end;
+  const isOvertimeActive = hasOvertimeStart && !hasOvertimeEnd;
 
   const canClockInNow = useMemo(() => {
     if (isShiftActive) return true;
@@ -179,6 +187,9 @@ export default function UserDashboard() {
   const computedStatus = useMemo(() => {
     if (!todayEntry?.clock_in_at)
       return { label: "Not started", tone: "orange" };
+    if (isOvertimeActive) return { label: "Overtime", tone: "orange" };
+    if (hasOvertimeStart && hasOvertimeEnd)
+      return { label: "Completed with Overtime", tone: "green" };
     if (todayEntry?.clock_out_at) return { label: "Completed", tone: "green" };
     if (isMorningBreakActive) return { label: "Morning Break", tone: "orange" };
     if (isAfternoonBreakActive)
@@ -186,9 +197,12 @@ export default function UserDashboard() {
     if (isLunchBreakActive) return { label: "Lunch Break", tone: "orange" };
     return { label: "Working", tone: "green" };
   }, [
+    hasOvertimeEnd,
+    hasOvertimeStart,
     isAfternoonBreakActive,
     isLunchBreakActive,
     isMorningBreakActive,
+    isOvertimeActive,
     todayEntry,
   ]);
 
@@ -280,6 +294,14 @@ export default function UserDashboard() {
     [getShiftDate, user],
   );
 
+  useEffect(() => {
+    todayEntryRef.current = todayEntry;
+  }, [todayEntry]);
+
+  useEffect(() => {
+    updateTodayEntryRef.current = updateTodayEntry;
+  }, [updateTodayEntry]);
+
   const handleClockIn = useCallback(async () => {
     if (!user || isShiftActive) return;
 
@@ -369,7 +391,6 @@ export default function UserDashboard() {
         clock_out_at: nowIso,
       });
       await fetchAttendance();
-      setIsOvertimeActive(false);
 
       toast.success("Clocked out.");
     } catch (err) {
@@ -397,12 +418,16 @@ export default function UserDashboard() {
       const windows = getBreakStartWindowStatus();
       if (breakType === "morning") {
         if (!windows.canStartMorning) {
-          toast.error("Morning break is only available before noon (12:00 PM).");
+          toast.error(
+            "Morning break is only available before noon (12:00 PM).",
+          );
           return;
         }
       } else if (breakType === "lunch") {
         if (!windows.canStartLunch) {
-          toast.error("Lunch break is only available between 12:00 and 1:00 PM.");
+          toast.error(
+            "Lunch break is only available between 12:00 and 1:00 PM.",
+          );
           return;
         }
       } else if (breakType === "afternoon") {
@@ -468,7 +493,6 @@ export default function UserDashboard() {
         overtime_end: null,
       });
       await fetchAttendance();
-      setIsOvertimeActive(true);
       toast.success("Overtime started.");
     } catch (err) {
       toast.error("Failed to start overtime.");
@@ -489,7 +513,6 @@ export default function UserDashboard() {
         overtime_end: now,
       });
       await fetchAttendance();
-      setIsOvertimeActive(false);
       toast.success("Overtime ended.");
     } catch (err) {
       toast.error("Failed to end overtime.");
@@ -593,6 +616,93 @@ export default function UserDashboard() {
     isAfternoonBreakActive,
     isLunchBreakActive,
     isMorningBreakActive,
+  ]);
+
+  // If break-out is never recorded after allowance + grace, close break and sign out
+  useEffect(() => {
+    if (!user) return;
+
+    const graceMs = FORGOT_BREAK_SIGNOUT_AFTER_MIN * 60 * 1000;
+    const configs = [
+      {
+        active: isMorningBreakActive,
+        breakInAt: todayEntry?.morning_break_in_at,
+        durationMin: MORNING_BREAK_MIN,
+        verify: (e, breakIn) =>
+          e?.morning_break_in_at === breakIn && !e?.morning_break_out_at,
+        patch: () => ({
+          morning_break_out_at: new Date().toISOString(),
+        }),
+        toastMsg:
+          "Signed out: morning break was left open past the allowed time plus 15 minutes.",
+      },
+      {
+        active: isAfternoonBreakActive,
+        breakInAt: todayEntry?.afternoon_break_in_at,
+        durationMin: AFTERNOON_BREAK_MIN,
+        verify: (e, breakIn) =>
+          e?.afternoon_break_in_at === breakIn && !e?.afternoon_break_out_at,
+        patch: () => ({
+          afternoon_break_out_at: new Date().toISOString(),
+        }),
+        toastMsg:
+          "Signed out: afternoon break was left open past the allowed time plus 15 minutes.",
+      },
+      {
+        active: isLunchBreakActive,
+        breakInAt: todayEntry?.lunch_break_in_at,
+        durationMin: LUNCH_BREAK_MIN,
+        verify: (e, breakIn) =>
+          e?.lunch_break_in_at === breakIn && !e?.lunch_break_out_at,
+        patch: () => ({
+          lunch_break_out_at: new Date().toISOString(),
+        }),
+        toastMsg:
+          "Signed out: lunch break was left open past the allowed time plus 15 minutes.",
+      },
+    ];
+
+    const timerIds = [];
+
+    for (const cfg of configs) {
+      if (!cfg.active || !cfg.breakInAt) continue;
+
+      const breakIn = cfg.breakInAt;
+      const startMs = new Date(breakIn).getTime();
+      const fireAt = startMs + cfg.durationMin * 60 * 1000 + graceMs;
+      const delay = Math.max(0, fireAt - Date.now());
+
+      const id = window.setTimeout(async () => {
+        const e = todayEntryRef.current;
+        if (!cfg.verify(e, breakIn)) return;
+        const patchFn = updateTodayEntryRef.current;
+        try {
+          if (patchFn) await patchFn(cfg.patch());
+        } catch {
+          toast.error("Could not record break end automatically.");
+        }
+        toast.info(cfg.toastMsg);
+        await signOut();
+      }, delay);
+
+      timerIds.push(id);
+    }
+
+    return () => {
+      for (const id of timerIds) window.clearTimeout(id);
+    };
+  }, [
+    user,
+    FORGOT_BREAK_SIGNOUT_AFTER_MIN,
+    isMorningBreakActive,
+    isAfternoonBreakActive,
+    isLunchBreakActive,
+    todayEntry?.morning_break_in_at,
+    todayEntry?.afternoon_break_in_at,
+    todayEntry?.lunch_break_in_at,
+    MORNING_BREAK_MIN,
+    AFTERNOON_BREAK_MIN,
+    LUNCH_BREAK_MIN,
   ]);
 
   const openConfirm = useCallback((type) => {
@@ -699,7 +809,7 @@ export default function UserDashboard() {
   }, [confirmType]);
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+    <div className="user-portal flex h-screen bg-gray-50 overflow-hidden">
       <Sidebar
         setIsSidebarOpen={setIsSidebarOpen}
         isSidebarOpen={isSidebarOpen}
@@ -715,6 +825,8 @@ export default function UserDashboard() {
           <div className="max-w-5xl mx-auto space-y-6">
             {activeTab === "My Logs" ? (
               <MyLogsTab />
+            ) : activeTab === "Profile" ? (
+              <ProfileTab />
             ) : (
               <>
                 <div className="bg-white rounded-2xl border border-orange-100 p-5 shadow-sm space-y-2">
@@ -814,7 +926,7 @@ export default function UserDashboard() {
                           isActionPending ||
                           isConfirmOpen ||
                           !user ||
-                          !!todayEntry?.overtime_start
+                          hasOvertimeStart
                         }
                         className="w-full md:w-auto px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-lg transform active:scale-95 flex items-center justify-center gap-3 cursor-pointer bg-orange-500 text-white hover:bg-orange-600 shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed"
                       >
@@ -1119,6 +1231,12 @@ export default function UserDashboard() {
                           const hasAfternoonOut = !!log.afternoon_break_out_at;
                           const hasLunchIn = !!log.lunch_break_in_at;
                           const hasLunchOut = !!log.lunch_break_out_at;
+                          const hasOvertimeIn = !!log.overtime_start;
+                          const hasOvertimeOut = !!log.overtime_end;
+                          const hasOvertimeActive =
+                            hasOvertimeIn && !hasOvertimeOut;
+                          const hasOvertimeCompleted =
+                            hasOvertimeIn && hasOvertimeOut;
 
                           const considerLate = isLate(
                             formatTime(log?.clock_in_at), // "04:41 PM"
@@ -1131,8 +1249,12 @@ export default function UserDashboard() {
                             weeklyShift?.shift_end_time,
                           );
 
-                          const statusLabel = hasClockOut
-                            ? "Shift Completed"
+                          const statusLabel = hasOvertimeCompleted
+                            ? "Shift Completed with Overtime"
+                            : hasOvertimeActive
+                              ? "Overtime"
+                            : hasClockOut
+                              ? "Shift Completed"
                             : hasMorningIn && !hasMorningOut
                               ? "Morning Break"
                               : hasAfternoonIn && !hasAfternoonOut
@@ -1143,8 +1265,10 @@ export default function UserDashboard() {
                                     ? "Working"
                                     : "Not started";
 
-                          const statusTone = hasClockOut
-                            ? "green"
+                          const statusTone = hasOvertimeActive
+                              ? "orange"
+                            : hasOvertimeCompleted || hasClockOut
+                              ? "green"
                             : hasMorningIn && !hasMorningOut
                               ? "orange"
                               : hasAfternoonIn && !hasAfternoonOut
@@ -1188,10 +1312,11 @@ export default function UserDashboard() {
                                 {formatTime(log.lunch_break_out_at)}
                               </td>
                               <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.clock_out_at)}{" "}
-                                {considerUnderTime && (
-                                  <span className="bg-orange-600 text-white px-2 rounded-2xl">
-                                    Undertime
+                                {formatTime(log.clock_out_at)}
+
+                                {log.clock_out_at && considerUnderTime && (
+                                  <span className="bg-orange-600 ml-1 text-white px-2 rounded-2xl">
+                                     Undertime
                                   </span>
                                 )}
                               </td>

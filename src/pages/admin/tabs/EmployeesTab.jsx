@@ -12,16 +12,30 @@ import { useAuth } from "../../../context/AuthContext";
 import DeleteEmployeeModal from "../../../components/admin/DeleteEmployeeModal";
 import EditEmployeeModal from "../../../components/admin/EditEmployeeModal";
 import ManageShiftModal from "../../../components/admin/ManageShiftModal";
+import { supabase } from "../../../utils/supabase";
 
 function EmployeesTab() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const { setLoading } = useLoading();
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
+  const [avatarSrcByAuthId, setAvatarSrcByAuthId] = useState({});
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selected, setSelected] = useState(null);
   const [isManageShiftOpen, setIsManageShiftOpen] = useState(false);
+
+  const resolveAvatarSrc = useCallback(async (avatarRef) => {
+    const ref = String(avatarRef ?? "").trim();
+    if (!ref) return "";
+    if (/^https?:\/\//i.test(ref)) return ref;
+
+    const { data, error } = await supabase.storage
+      .from("avatars")
+      .createSignedUrl(ref, 60 * 60);
+    if (error) throw error;
+    return data?.signedUrl ?? "";
+  }, []);
 
   const loadEmployees = useCallback(async () => {
     setLoading(true);
@@ -40,6 +54,37 @@ function EmployeesTab() {
   useEffect(() => {
     loadEmployees();
   }, [loadEmployees]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAvatarSources = async () => {
+      const nextAvatarMap = {};
+
+      await Promise.all(
+        employees.map(async (emp) => {
+          try {
+            const url = await resolveAvatarSrc(emp?.avatar_url);
+            if (url) {
+              nextAvatarMap[emp.auth_id] = url;
+            }
+          } catch {
+            nextAvatarMap[emp.auth_id] = "";
+          }
+        }),
+      );
+
+      if (!cancelled) {
+        setAvatarSrcByAuthId(nextAvatarMap);
+      }
+    };
+
+    loadAvatarSources();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [employees, resolveAvatarSrc]);
 
   const confirmText = useMemo(
     () => selected?.email ?? "DELETE",
@@ -125,6 +170,14 @@ function EmployeesTab() {
           const name =
             `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() ||
             emp.email;
+          const avatarSrc = avatarSrcByAuthId[emp.auth_id] ?? "";
+          const initials = name
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0])
+            .join("")
+            .toUpperCase();
           const canDelete = emp.auth_id !== user?.id;
 
           return (
@@ -134,9 +187,17 @@ function EmployeesTab() {
                 className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all group"
               >
                 <div className="flex justify-between items-start mb-4">
-                  <div className="w-14 h-14 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center font-black text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">
-                    {name.charAt(0).toUpperCase()}
-                  </div>
+                  {avatarSrc ? (
+                    <img
+                      src={avatarSrc}
+                      alt={`${name} profile`}
+                      className="w-20 h-20 rounded-full object-cover object-center border-2 border-orange-100 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center font-black text-2xl border-2 border-orange-100 group-hover:bg-orange-500 group-hover:text-white transition-colors">
+                      {initials || "?"}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <button
                       type="button"

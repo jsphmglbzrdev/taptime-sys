@@ -119,3 +119,20 @@ export const listTimeEntriesByAuthId = async ({ auth_id }) => {
     return { success: false, error: error.message };
   }
 };
+
+export const listTimeEntriesByShiftDate = async ({ shift_date }) => {
+  try {
+    if (!shift_date) throw new Error("shift_date is required");
+
+    const { data, error } = await supabaseAdmin
+      .from("time_entries")
+      .select("*")
+      .eq("shift_date", shift_date)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return { success: true, data: data ?? [] };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};

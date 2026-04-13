@@ -19,12 +19,12 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-    <div className="admin-portal flex h-screen bg-gray-50 overflow-hidden font-sans text-slate-900">
+    <div className="admin-portal flex h-screen bg-gray-50 overflow-hidden font-[roboto] text-slate-900">
       <Sidebar
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={setActiveTab} 
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">

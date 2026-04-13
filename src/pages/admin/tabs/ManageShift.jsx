@@ -129,6 +129,7 @@ export default function ManageShift() {
       setIsSaving(true);
       try {
         const safePayload = {
+          shift_created_at: payload.created_at,
           employee_auth_id: payload.employee_auth_id,
           week_start: payload.week_start,
           week_end: payload.week_end,
@@ -163,6 +164,7 @@ export default function ManageShift() {
             const histRes = await supabase
               .from("employee_weekly_shift_history")
               .insert({
+                shift_created_at: prev.created_at,
                 employee_auth_id: prev.employee_auth_id,
                 week_start: prev.week_start,
                 week_end: prev.week_end,
