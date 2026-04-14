@@ -1,4 +1,4 @@
-import { Mail, Plus, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import AccountCreationModal from "../../../components/admin/AccountCreationModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -12,7 +12,16 @@ import { useAuth } from "../../../context/AuthContext";
 import DeleteEmployeeModal from "../../../components/admin/DeleteEmployeeModal";
 import EditEmployeeModal from "../../../components/admin/EditEmployeeModal";
 import ManageShiftModal from "../../../components/admin/ManageShiftModal";
-import { supabase } from "../../../utils/supabase";
+import AvatarEditorModal from "../../../components/AvatarEditorModal";
+import AvatarViewerModal from "../../../components/AvatarViewerModal";
+import ConfirmationBox from "../../../components/ConfirmationBox";
+import {
+  AVATAR_MAX_SIZE_LABEL,
+  deleteAvatarForUser,
+  resolveAvatarSrc,
+  saveAvatarForUser,
+  validateAvatarFile,
+} from "../../../utils/avatar";
 
 function EmployeesTab() {
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -24,18 +33,11 @@ function EmployeesTab() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selected, setSelected] = useState(null);
   const [isManageShiftOpen, setIsManageShiftOpen] = useState(false);
-
-  const resolveAvatarSrc = useCallback(async (avatarRef) => {
-    const ref = String(avatarRef ?? "").trim();
-    if (!ref) return "";
-    if (/^https?:\/\//i.test(ref)) return ref;
-
-    const { data, error } = await supabase.storage
-      .from("avatars")
-      .createSignedUrl(ref, 60 * 60);
-    if (error) throw error;
-    return data?.signedUrl ?? "";
-  }, []);
+  const [isAvatarBusy, setIsAvatarBusy] = useState(false);
+  const [avatarDraftFile, setAvatarDraftFile] = useState(null);
+  const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
+  const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false);
+  const [isDeleteAvatarModalOpen, setIsDeleteAvatarModalOpen] = useState(false);
 
   const loadEmployees = useCallback(async () => {
     setLoading(true);
@@ -43,9 +45,11 @@ function EmployeesTab() {
       const res = await listUserProfiles();
       if (!res.success) {
         toast.error(res.error || "Failed to load accounts");
-        return;
+        return [];
       }
-      setEmployees(res.data);
+      const nextEmployees = res.data ?? [];
+      setEmployees(nextEmployees);
+      return nextEmployees;
     } finally {
       setLoading(false);
     }
@@ -120,6 +124,94 @@ function EmployeesTab() {
     [loadEmployees, setLoading],
   );
 
+  const refreshSelected = useCallback((authId, nextEmployees) => {
+    if (!authId) return;
+    const nextSelected = (nextEmployees ?? []).find(
+      (emp) => emp.auth_id === authId,
+    );
+    setSelected(nextSelected ?? null);
+  }, []);
+
+  const handleUploadAvatar = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validationMessage = validateAvatarFile(file);
+    if (validationMessage) {
+      toast.error(validationMessage);
+      e.target.value = "";
+      return;
+    }
+
+    setAvatarDraftFile(file);
+    setIsAvatarEditorOpen(true);
+    e.target.value = "";
+  }, []);
+
+  const handleSaveAvatar = useCallback(
+    async (file) => {
+      if (!selected?.auth_id) return;
+
+      setIsAvatarBusy(true);
+      setLoading(true);
+      try {
+        await saveAvatarForUser({
+          authId: selected.auth_id,
+          file,
+          previousAvatarRef: selected.avatar_url,
+        });
+        setIsAvatarEditorOpen(false);
+        setAvatarDraftFile(null);
+        toast.success("Profile picture updated.");
+        const nextEmployees = await loadEmployees();
+        refreshSelected(selected.auth_id, nextEmployees);
+      } catch (err) {
+        toast.error(
+          err?.message ??
+            "Failed to upload profile picture. Check the avatars storage bucket.",
+        );
+      } finally {
+        setIsAvatarBusy(false);
+        setLoading(false);
+      }
+    },
+    [
+      loadEmployees,
+      refreshSelected,
+      selected?.auth_id,
+      selected?.avatar_url,
+      setLoading,
+    ],
+  );
+
+  const handleDeleteAvatar = useCallback(async () => {
+    if (!selected?.auth_id || !selected?.avatar_url) return;
+
+    setIsAvatarBusy(true);
+    setLoading(true);
+    try {
+      await deleteAvatarForUser({
+        authId: selected.auth_id,
+        avatarRef: selected.avatar_url,
+      });
+      setIsAvatarViewerOpen(false);
+      toast.success("Profile picture removed.");
+      const nextEmployees = await loadEmployees();
+      refreshSelected(selected.auth_id, nextEmployees);
+    } catch (err) {
+      toast.error(err?.message ?? "Failed to remove profile picture.");
+    } finally {
+      setIsAvatarBusy(false);
+      setLoading(false);
+    }
+  }, [
+    loadEmployees,
+    refreshSelected,
+    selected?.auth_id,
+    selected?.avatar_url,
+    setLoading,
+  ]);
+
   const handleDelete = useCallback(
     async (emp) => {
       if (emp?.auth_id === user?.id) {
@@ -144,6 +236,15 @@ function EmployeesTab() {
     },
     [loadEmployees, setLoading, user?.id],
   );
+
+  const closeEditModal = useCallback(() => {
+    setIsEditOpen(false);
+    setSelected(null);
+    setIsAvatarEditorOpen(false);
+    setIsAvatarViewerOpen(false);
+    setIsDeleteAvatarModalOpen(false);
+    setAvatarDraftFile(null);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -260,11 +361,14 @@ function EmployeesTab() {
 
       <EditEmployeeModal
         isOpen={isEditOpen}
-        onClose={() => {
-          setIsEditOpen(false);
-          setSelected(null);
-        }}
+        onClose={closeEditModal}
         employee={selected}
+        avatarSrc={selected ? avatarSrcByAuthId[selected.auth_id] ?? "" : ""}
+        onAvatarFileChange={handleUploadAvatar}
+        onViewAvatar={() => setIsAvatarViewerOpen(true)}
+        onDeleteAvatar={() => setIsDeleteAvatarModalOpen(true)}
+        isAvatarBusy={isAvatarBusy}
+        avatarMaxSizeLabel={AVATAR_MAX_SIZE_LABEL}
         onSave={handleSave}
       />
 
@@ -278,6 +382,42 @@ function EmployeesTab() {
         confirmText={confirmText}
         onConfirm={handleDelete}
         isSelf={isSelf}
+      />
+
+      <AvatarEditorModal
+        isOpen={isAvatarEditorOpen}
+        file={avatarDraftFile}
+        isSaving={isAvatarBusy}
+        title="Edit employee profile picture"
+        onClose={() => {
+          if (isAvatarBusy) return;
+          setIsAvatarEditorOpen(false);
+          setAvatarDraftFile(null);
+        }}
+        onSave={handleSaveAvatar}
+      />
+
+      <AvatarViewerModal
+        isOpen={isAvatarViewerOpen}
+        src={selected ? avatarSrcByAuthId[selected.auth_id] ?? "" : ""}
+        title={`${
+          `${selected?.first_name ?? ""} ${selected?.last_name ?? ""}`.trim() ||
+          selected?.email ||
+          "Employee"
+        } profile photo`}
+        onClose={() => setIsAvatarViewerOpen(false)}
+      />
+
+      <ConfirmationBox
+        isModalOpen={isDeleteAvatarModalOpen}
+        setIsModalOpen={setIsDeleteAvatarModalOpen}
+        title="Delete profile photo?"
+        description="This employee's current profile picture will be removed from their account."
+        buttonText="Delete photo"
+        handleAction={async () => {
+          setIsDeleteAvatarModalOpen(false);
+          await handleDeleteAvatar();
+        }}
       />
     </div>
   );

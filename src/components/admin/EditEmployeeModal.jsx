@@ -1,9 +1,22 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Eye, Trash2 } from "lucide-react";
 
-function EditEmployeeModal({ isOpen, onClose, employee, onSave }) {
+function EditEmployeeModal({
+  isOpen,
+  onClose,
+  employee,
+  onSave,
+  avatarSrc = "",
+  onAvatarFileChange,
+  onViewAvatar,
+  onDeleteAvatar,
+  isAvatarBusy = false,
+  avatarMaxSizeLabel = "5 MB",
+}) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [password, setPassword] = useState("");
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     if (!employee) return;
@@ -11,6 +24,16 @@ function EditEmployeeModal({ isOpen, onClose, employee, onSave }) {
     setLastName(employee.last_name ?? "");
     setPassword("");
   }, [employee]);
+
+  const displayName =
+    `${firstName ?? ""} ${lastName ?? ""}`.trim() ||
+    employee?.email ||
+    "Employee";
+  const initials = useMemo(() => {
+    const parts = displayName.split(" ").filter(Boolean).slice(0, 2);
+    if (parts.length === 0) return "?";
+    return parts.map((part) => part[0]).join("").toUpperCase();
+  }, [displayName]);
 
   if (!isOpen || !employee) return null;
 
@@ -20,11 +43,71 @@ function EditEmployeeModal({ isOpen, onClose, employee, onSave }) {
         className="fixed inset-0 bg-slate-900/30 backdrop-blur-md"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-md rounded-2xl bg-white border border-slate-100 shadow-2xl p-6">
+      <div className="relative w-full max-w-lg rounded-2xl bg-white border border-slate-100 shadow-2xl p-6">
         <h3 className="text-lg font-black text-gray-800">Edit Account</h3>
         <p className="text-sm text-gray-500 mt-1">{employee.email}</p>
 
         <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              {avatarSrc ? (
+                <img
+                  src={avatarSrc}
+                  alt={`${displayName} profile`}
+                  className="h-20 w-20 shrink-0 rounded-full border-4 border-orange-100 object-cover object-center"
+                />
+              ) : (
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-4 border-orange-100 bg-orange-50 text-2xl font-black text-orange-500">
+                  {initials}
+                </div>
+              )}
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-gray-800">Profile picture</p>
+                <p className="mt-1 text-xs font-medium text-gray-500">
+                  Upload and crop a JPG, PNG, or WebP image up to {avatarMaxSizeLabel}.
+                </p>
+
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={isAvatarBusy}
+                  onChange={onAvatarFileChange}
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={isAvatarBusy}
+                    className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Change profile picture
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onViewAvatar}
+                    disabled={!avatarSrc}
+                    className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Eye size={16} />
+                    View photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDeleteAvatar}
+                    disabled={!employee.avatar_url || isAvatarBusy}
+                    className="inline-flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-2 text-sm font-bold text-red-600 transition-all hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 size={16} />
+                    Delete photo
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div>
             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
               First name
