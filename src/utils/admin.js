@@ -136,3 +136,75 @@ export const listTimeEntriesByShiftDate = async ({ shift_date }) => {
     return { success: false, error: error.message };
   }
 };
+
+export const autoEndExpiredBreaksByShiftDate = async ({ shift_date }) => {
+  try {
+    if (!shift_date) throw new Error("shift_date is required");
+
+    const { data, error } = await supabaseAdmin
+      .from("time_entries")
+      .select(
+        "auth_id, shift_date, morning_break_in_at, morning_break_out_at, afternoon_break_in_at, afternoon_break_out_at, lunch_break_in_at, lunch_break_out_at",
+      )
+      .eq("shift_date", shift_date);
+
+    if (error) throw error;
+
+    const nowMs = Date.now();
+    const expiredUpdates = [];
+    const breakConfigs = [
+      {
+        inKey: "morning_break_in_at",
+        outKey: "morning_break_out_at",
+        durationMs: 15 * 60 * 1000,
+      },
+      {
+        inKey: "afternoon_break_in_at",
+        outKey: "afternoon_break_out_at",
+        durationMs: 15 * 60 * 1000,
+      },
+      {
+        inKey: "lunch_break_in_at",
+        outKey: "lunch_break_out_at",
+        durationMs: 60 * 60 * 1000,
+      },
+    ];
+
+    for (const entry of data ?? []) {
+      for (const cfg of breakConfigs) {
+        const breakInAt = entry?.[cfg.inKey];
+        const breakOutAt = entry?.[cfg.outKey];
+        if (!breakInAt || breakOutAt) continue;
+
+        const endMs = new Date(breakInAt).getTime() + cfg.durationMs;
+        if (Number.isNaN(endMs) || endMs > nowMs) continue;
+
+        expiredUpdates.push({
+          auth_id: entry.auth_id,
+          shift_date: entry.shift_date,
+          [cfg.outKey]: new Date(endMs).toISOString(),
+        });
+        break;
+      }
+    }
+
+    if (expiredUpdates.length === 0) {
+      return { success: true, updated: 0 };
+    }
+
+    for (const patch of expiredUpdates) {
+      const { auth_id, shift_date: patchShiftDate, ...fields } = patch;
+      const updateRes = await supabaseAdmin
+        .from("time_entries")
+        .update(fields)
+        .eq("auth_id", auth_id)
+        .eq("shift_date", patchShiftDate);
+
+      if (updateRes.error) throw updateRes.error;
+    }
+
+    return { success: true, updated: expiredUpdates.length };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};

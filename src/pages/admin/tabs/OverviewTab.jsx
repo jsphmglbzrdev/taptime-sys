@@ -11,6 +11,7 @@ import {
   UserRoundX,
 } from "lucide-react";
 import {
+  autoEndExpiredBreaksByShiftDate,
   listTimeEntriesByAuthId,
   listTimeEntriesByShiftDate,
   listUserProfiles,
@@ -81,6 +82,16 @@ function OverviewTab({ currentTime }) {
 
   const loadTodayEntries = useCallback(async () => {
     try {
+      const autoEndRes = await autoEndExpiredBreaksByShiftDate({
+        shift_date: todayShiftDate,
+      });
+      if (!autoEndRes.success) {
+        console.debug("[OverviewTab] failed to auto-end expired breaks", {
+          shiftDate: todayShiftDate,
+          error: autoEndRes.error,
+        });
+      }
+
       const res = await listTimeEntriesByShiftDate({ shift_date: todayShiftDate });
       if (!res.success) {
         toast.error(res.error || "Failed to load live monitoring data");
