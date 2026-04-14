@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Clock, Coffee, RefreshCw, Sunset, SunMedium } from "lucide-react";
+import {
+  Activity,
+  CheckCircle2,
+  Clock,
+  Coffee,
+  RefreshCw,
+  Sunset,
+  SunMedium,
+  UserCheck,
+  UserRoundX,
+} from "lucide-react";
 import {
   listTimeEntriesByAuthId,
   listTimeEntriesByShiftDate,
@@ -12,9 +22,8 @@ import EmployeeLogsModal from "../../../components/admin/EmployeesLogModal";
 import { isLate, isUnderTime } from "../../../utils/shiftSchedule";
 import { supabase } from "../../../utils/supabase";
 
-
 function OverviewTab({ currentTime }) {
-  const AUTO_REFRESH_SECONDS = 30;
+  const AUTO_REFRESH_SECONDS = 15;
   const MORNING_BREAK_MIN = 15;
   const AFTERNOON_BREAK_MIN = 15;
   const LUNCH_BREAK_MIN = 60;
@@ -24,6 +33,7 @@ function OverviewTab({ currentTime }) {
   const [avatarSrcByAuthId, setAvatarSrcByAuthId] = useState({});
   const [todayEntries, setTodayEntries] = useState([]);
   const [activeLiveTab, setActiveLiveTab] = useState("all");
+  const [activeStatusTab, setActiveStatusTab] = useState("on-duty");
   const [selected, setSelected] = useState(null);
   const [isLogsOpen, setIsLogsOpen] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -47,18 +57,21 @@ function OverviewTab({ currentTime }) {
     return data?.signedUrl ?? "";
   }, []);
 
-  const loadEmployees = useCallback(async () => {
-    setLoading(true);
+  const loadEmployees = useCallback(async ({ showSpinner = false } = {}) => {
+    if (showSpinner) {
+      setLoading(true);
+    }
     try {
       const res = await listUserProfiles();
       if (!res.success) {
         toast.error(res.error || "Failed to load employees");
         return;
       }
-      // Only show employees (admins should not appear in monitoring logs)
       setEmployees((res.data ?? []).filter((u) => u?.role === "Employee"));
     } finally {
-      setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   }, [setLoading]);
 
@@ -83,18 +96,22 @@ function OverviewTab({ currentTime }) {
     loadTodayEntries();
   }, [loadTodayEntries]);
 
-  const refreshOverview = useCallback(async ({ silent = false, includeEmployees = true } = {}) => {
+  const refreshOverview = useCallback(async ({ silent = false, source = "manual" } = {}) => {
     setIsRefreshing(true);
     try {
-      const tasks = [loadTodayEntries()];
-      if (includeEmployees) {
-        tasks.push(loadEmployees());
-      }
-      await Promise.all(tasks);
+      await Promise.all([loadEmployees(), loadTodayEntries()]);
+      console.debug("[OverviewTab] refresh completed", {
+        source,
+        refreshedAt: new Date().toISOString(),
+      });
       if (!silent) {
         toast.success("Monitoring dashboard refreshed.");
       }
     } catch {
+      console.debug("[OverviewTab] refresh failed", {
+        source,
+        attemptedAt: new Date().toISOString(),
+      });
       if (!silent) {
         toast.error("Failed to refresh monitoring dashboard.");
       }
@@ -105,7 +122,7 @@ function OverviewTab({ currentTime }) {
 
   useEffect(() => {
     const autoRefreshId = window.setInterval(() => {
-      refreshOverview({ silent: true, includeEmployees: false });
+      refreshOverview({ silent: true, source: "auto-poll" });
     }, AUTO_REFRESH_SECONDS * 1000);
 
     return () => {
@@ -161,7 +178,7 @@ function OverviewTab({ currentTime }) {
           } catch {
             nextAvatarMap[emp.auth_id] = "";
           }
-        })
+        }),
       );
 
       if (!cancelled) {
@@ -193,14 +210,13 @@ function OverviewTab({ currentTime }) {
         setLoading(false);
       }
     },
-    [setLoading]
+    [setLoading],
   );
 
   const exportSelectedExcel = useCallback(async () => {
     if (!selected) return;
     setIsExporting(true);
     try {
-      // Fetch weekly shift for the employee
       let weeklyShiftData = null;
       if (logs.length > 0) {
         const shiftDate = logs[0]?.shift_date;
@@ -271,16 +287,56 @@ function OverviewTab({ currentTime }) {
           Date: r.shift_date,
           "Scheduled Time Shift": r.scheduled_shift || "-",
           "Clock In": clockInDisplay,
-          "Morning Break Time (Time In)": r.morning_break_in_at ? new Date(r.morning_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Morning Break Time (Time Out)": r.morning_break_out_at ? new Date(r.morning_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Afternoon Break Time (Time In)": r.afternoon_break_in_at ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Afternoon Break Time (Time Out)": r.afternoon_break_out_at ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Lunch Break Time (Time In)": r.lunch_break_in_at ? new Date(r.lunch_break_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Lunch Break Time (Time Out)": r.lunch_break_out_at ? new Date(r.lunch_break_out_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          "Morning Break Time (Time In)": r.morning_break_in_at
+            ? new Date(r.morning_break_in_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Morning Break Time (Time Out)": r.morning_break_out_at
+            ? new Date(r.morning_break_out_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Afternoon Break Time (Time In)": r.afternoon_break_in_at
+            ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Afternoon Break Time (Time Out)": r.afternoon_break_out_at
+            ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Lunch Break Time (Time In)": r.lunch_break_in_at
+            ? new Date(r.lunch_break_in_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Lunch Break Time (Time Out)": r.lunch_break_out_at
+            ? new Date(r.lunch_break_out_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
           "Clock Out": clockOutDisplay,
-          "Overtime Start": r.overtime_start ? new Date(r.overtime_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Overtime End": r.overtime_end ? new Date(r.overtime_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-          "Status": statusLabel,
+          "Overtime Start": r.overtime_start
+            ? new Date(r.overtime_start).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          "Overtime End": r.overtime_end
+            ? new Date(r.overtime_end).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          Status: statusLabel,
         };
       });
 
@@ -289,10 +345,14 @@ function OverviewTab({ currentTime }) {
       XLSX.utils.book_append_sheet(wb, ws, "Employee Logs");
 
       const safeName =
-        `${selected.first_name ?? ""} ${selected.last_name ?? ""}`.trim().replace(/\s+/g, "-") ||
-        (selected.email ?? "employee");
-      XLSX.writeFile(wb, `employee-logs-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    } catch (err) {
+        `${selected.first_name ?? ""} ${selected.last_name ?? ""}`
+          .trim()
+          .replace(/\s+/g, "-") || (selected.email ?? "employee");
+      XLSX.writeFile(
+        wb,
+        `employee-logs-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      );
+    } catch {
       toast.error("Failed to export Excel.");
     } finally {
       setIsExporting(false);
@@ -317,31 +377,31 @@ function OverviewTab({ currentTime }) {
           key={emp.auth_id}
           type="button"
           onClick={() => openEmployeeLogs(emp)}
-          className="text-left bg-white rounded-2xl border cursor-pointer border-gray-100 p-6 shadow-sm hover:shadow-md transition-all"
+          className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-all hover:shadow-md"
         >
           <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4 min-w-0">
+            <div className="flex min-w-0 items-center gap-4">
               {avatarSrc ? (
                 <img
                   src={avatarSrc}
                   alt={`${name} profile`}
-                  className="w-16 h-16 rounded-full object-cover object-center border-2 border-orange-100 shrink-0"
+                  className="h-16 w-16 shrink-0 rounded-full border-2 border-orange-100 object-cover object-center"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center font-black text-xl border-2 border-orange-100 shrink-0">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50 text-xl font-black text-orange-500">
                   {initials || "?"}
                 </div>
               )}
               <div className="min-w-0">
-                <p className="text-lg font-black text-gray-800 truncate">{name}</p>
-                <p className="text-xs font-bold text-gray-400 truncate">{emp.email}</p>
+                <p className="truncate text-lg font-black text-gray-800">{name}</p>
+                <p className="truncate text-xs font-bold text-gray-400">{emp.email}</p>
               </div>
             </div>
-            <span className="text-[10px] font-black px-2 py-1 rounded-lg bg-green-50 text-green-600 shrink-0">
+            <span className="shrink-0 rounded-lg bg-green-50 px-2 py-1 text-[10px] font-black text-green-600">
               {String(emp.role ?? "Employee").toUpperCase()}
             </span>
           </div>
-          <div className="mt-4 text-[10px] font-black text-orange-500 uppercase tracking-widest">
+          <div className="mt-4 text-[10px] font-black uppercase tracking-widest text-orange-500">
             View time logs
           </div>
         </button>
@@ -351,9 +411,7 @@ function OverviewTab({ currentTime }) {
 
   const liveStatuses = useMemo(() => {
     const nowMs = currentTime.getTime();
-    const entryByAuthId = new Map(
-      todayEntries.map((entry) => [entry.auth_id, entry]),
-    );
+    const entryByAuthId = new Map(todayEntries.map((entry) => [entry.auth_id, entry]));
 
     return employees.map((emp) => {
       const name =
@@ -368,54 +426,68 @@ function OverviewTab({ currentTime }) {
       const hasAfternoonOut = !!entry?.afternoon_break_out_at;
       const hasLunchIn = !!entry?.lunch_break_in_at;
       const hasLunchOut = !!entry?.lunch_break_out_at;
+      const hasAnyBreakRecord =
+        hasMorningIn ||
+        hasMorningOut ||
+        hasLunchIn ||
+        hasLunchOut ||
+        hasAfternoonIn ||
+        hasAfternoonOut;
+
       const getRemainingSeconds = (startAt, durationMin) => {
         if (!startAt) return null;
         const startMs = new Date(startAt).getTime();
         const endMs = startMs + durationMin * 60 * 1000;
-        return Math.max(0, Math.floor((endMs - nowMs) / 1000));
+        return Math.max(0, Math.ceil((endMs - nowMs) / 1000));
+      };
+
+      const getResolvedActiveStatus = () => {
+        if (hasClockOut) {
+          return {
+            statusKey: "completed",
+            statusLabel: "Shift Completed",
+            toneClass: "bg-green-50 text-green-700",
+            countdownSeconds: null,
+          };
+        }
+
+        if (hasClockIn) {
+          return {
+            statusKey: "working",
+            statusLabel: "Working",
+            toneClass: "bg-emerald-50 text-emerald-700",
+            countdownSeconds: null,
+          };
+        }
+
+        return {
+          statusKey: "idle",
+          statusLabel: "Not started",
+          toneClass: "bg-gray-100 text-gray-600",
+          countdownSeconds: null,
+        };
       };
 
       let statusKey = "idle";
       let statusLabel = "Not started";
       let toneClass = "bg-gray-100 text-gray-600";
       let countdownSeconds = null;
-      let shouldHideFromLiveBreaks = false;
 
       if (hasMorningIn && !hasMorningOut) {
-        countdownSeconds = getRemainingSeconds(
-          entry?.morning_break_in_at,
-          MORNING_BREAK_MIN,
-        );
-        shouldHideFromLiveBreaks = countdownSeconds === 0;
-        if (shouldHideFromLiveBreaks) {
-          statusKey = hasClockOut ? "completed" : hasClockIn ? "working" : "idle";
-          statusLabel = hasClockOut ? "Shift Completed" : hasClockIn ? "Working" : "Not started";
-          toneClass = hasClockOut
-            ? "bg-green-50 text-green-700"
-            : hasClockIn
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-gray-100 text-gray-600";
-          countdownSeconds = null;
+        countdownSeconds = getRemainingSeconds(entry?.morning_break_in_at, MORNING_BREAK_MIN);
+        if (countdownSeconds <= 0) {
+          ({ statusKey, statusLabel, toneClass, countdownSeconds } =
+            getResolvedActiveStatus());
         } else {
           statusKey = "morning";
           statusLabel = "Morning Break";
           toneClass = "bg-amber-50 text-amber-700";
         }
       } else if (hasLunchIn && !hasLunchOut) {
-        countdownSeconds = getRemainingSeconds(
-          entry?.lunch_break_in_at,
-          LUNCH_BREAK_MIN,
-        );
-        shouldHideFromLiveBreaks = countdownSeconds === 0;
-        if (shouldHideFromLiveBreaks) {
-          statusKey = hasClockOut ? "completed" : hasClockIn ? "working" : "idle";
-          statusLabel = hasClockOut ? "Shift Completed" : hasClockIn ? "Working" : "Not started";
-          toneClass = hasClockOut
-            ? "bg-green-50 text-green-700"
-            : hasClockIn
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-gray-100 text-gray-600";
-          countdownSeconds = null;
+        countdownSeconds = getRemainingSeconds(entry?.lunch_break_in_at, LUNCH_BREAK_MIN);
+        if (countdownSeconds <= 0) {
+          ({ statusKey, statusLabel, toneClass, countdownSeconds } =
+            getResolvedActiveStatus());
         } else {
           statusKey = "lunch";
           statusLabel = "Lunch Break";
@@ -426,16 +498,9 @@ function OverviewTab({ currentTime }) {
           entry?.afternoon_break_in_at,
           AFTERNOON_BREAK_MIN,
         );
-        shouldHideFromLiveBreaks = countdownSeconds === 0;
-        if (shouldHideFromLiveBreaks) {
-          statusKey = hasClockOut ? "completed" : hasClockIn ? "working" : "idle";
-          statusLabel = hasClockOut ? "Shift Completed" : hasClockIn ? "Working" : "Not started";
-          toneClass = hasClockOut
-            ? "bg-green-50 text-green-700"
-            : hasClockIn
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-gray-100 text-gray-600";
-          countdownSeconds = null;
+        if (countdownSeconds <= 0) {
+          ({ statusKey, statusLabel, toneClass, countdownSeconds } =
+            getResolvedActiveStatus());
         } else {
           statusKey = "afternoon";
           statusLabel = "Afternoon Break";
@@ -455,13 +520,13 @@ function OverviewTab({ currentTime }) {
         auth_id: emp.auth_id,
         avatarSrc,
         email: emp.email,
-        name,
         entry,
+        hasAnyBreakRecord,
+        name,
         statusKey,
         statusLabel,
         toneClass,
         countdownSeconds,
-        shouldHideFromLiveBreaks,
       };
     });
   }, [
@@ -489,33 +554,26 @@ function OverviewTab({ currentTime }) {
         label: "All Breaks",
         icon: Coffee,
         count: liveStatuses.filter((item) =>
-          ["morning", "lunch", "afternoon"].includes(item.statusKey) &&
-          !item.shouldHideFromLiveBreaks,
+          ["morning", "lunch", "afternoon"].includes(item.statusKey),
         ).length,
       },
       {
         id: "morning",
         label: "Morning",
         icon: SunMedium,
-        count: liveStatuses.filter(
-          (item) => item.statusKey === "morning" && !item.shouldHideFromLiveBreaks,
-        ).length,
+        count: liveStatuses.filter((item) => item.statusKey === "morning").length,
       },
       {
         id: "lunch",
         label: "Lunch",
         icon: Coffee,
-        count: liveStatuses.filter(
-          (item) => item.statusKey === "lunch" && !item.shouldHideFromLiveBreaks,
-        ).length,
+        count: liveStatuses.filter((item) => item.statusKey === "lunch").length,
       },
       {
         id: "afternoon",
         label: "Afternoon",
         icon: Sunset,
-        count: liveStatuses.filter(
-          (item) => item.statusKey === "afternoon" && !item.shouldHideFromLiveBreaks,
-        ).length,
+        count: liveStatuses.filter((item) => item.statusKey === "afternoon").length,
       },
     ],
     [liveStatuses],
@@ -524,33 +582,128 @@ function OverviewTab({ currentTime }) {
   const liveBreakEmployees = useMemo(() => {
     if (activeLiveTab === "all") {
       return liveStatuses.filter((item) =>
-        ["morning", "lunch", "afternoon"].includes(item.statusKey) &&
-        !item.shouldHideFromLiveBreaks,
+        ["morning", "lunch", "afternoon"].includes(item.statusKey),
       );
     }
-    return liveStatuses.filter(
-      (item) => item.statusKey === activeLiveTab && !item.shouldHideFromLiveBreaks,
-    );
+
+    return liveStatuses.filter((item) => item.statusKey === activeLiveTab);
   }, [activeLiveTab, liveStatuses]);
+
+  const statusTabs = useMemo(
+    () => [
+      {
+        id: "on-duty",
+        label: "On Duty",
+        icon: UserCheck,
+        count: liveStatuses.filter((item) => item.statusKey === "working").length,
+      },
+      {
+        id: "completed",
+        label: "Completed",
+        icon: CheckCircle2,
+        count: liveStatuses.filter((item) => item.statusKey === "completed").length,
+      },
+      {
+        id: "not-break",
+        label: "Not Yet on Break",
+        icon: UserRoundX,
+        count: liveStatuses.filter(
+          (item) => item.statusKey === "working" && !item.hasAnyBreakRecord,
+        ).length,
+      },
+    ],
+    [liveStatuses],
+  );
+
+  const statusEmployees = useMemo(() => {
+    if (activeStatusTab === "completed") {
+      return liveStatuses.filter((item) => item.statusKey === "completed");
+    }
+
+    if (activeStatusTab === "not-break") {
+      return liveStatuses.filter(
+        (item) => item.statusKey === "working" && !item.hasAnyBreakRecord,
+      );
+    }
+
+    return liveStatuses.filter((item) => item.statusKey === "working");
+  }, [activeStatusTab, liveStatuses]);
+
+  const renderStatusCard = useCallback(
+    (emp, keyPrefix) => (
+      <button
+        key={`${keyPrefix}-${emp.auth_id}`}
+        type="button"
+        onClick={() =>
+          openEmployeeLogs(employees.find((item) => item.auth_id === emp.auth_id) ?? emp)
+        }
+        className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-gray-50/70 p-4 text-left transition-all hover:bg-white hover:shadow-sm"
+      >
+        {emp.avatarSrc ? (
+          <img
+            src={emp.avatarSrc}
+            alt={`${emp.name} profile`}
+            className="h-14 w-14 shrink-0 rounded-full border-2 border-orange-100 object-cover object-center"
+          />
+        ) : (
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50 font-black text-xl text-orange-500">
+            {emp.name
+              .split(" ")
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((part) => part[0])
+              .join("")
+              .toUpperCase() || "?"}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-base font-black text-gray-800">{emp.name}</p>
+            <div className="shrink-0">
+              <span className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${emp.toneClass}`}>
+                {emp.statusLabel}
+              </span>
+              {emp.countdownSeconds !== null && emp.countdownSeconds > 0 && (
+                <p className="mt-1 text-right text-xs font-black tabular-nums text-orange-600">
+                  {formatCountdown(emp.countdownSeconds)}
+                </p>
+              )}
+            </div>
+          </div>
+          <p className="truncate text-xs font-medium text-gray-500">{emp.email}</p>
+        </div>
+      </button>
+    ),
+    [employees, formatCountdown, openEmployeeLogs],
+  );
 
   return (
     <>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">Monitoring Dashboard</h2>
-          <p className="text-gray-500 text-sm font-medium">Real-time status for {currentTime.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+          <h2 className="text-2xl font-black tracking-tight text-gray-800">
+            Monitoring Dashboard
+          </h2>
+          <p className="text-sm font-medium text-gray-500">
+            Real-time status for{" "}
+            {currentTime.toLocaleDateString([], {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
         </div>
         <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
           <button
             type="button"
-            onClick={() => refreshOverview()}
+            onClick={() => refreshOverview({ source: "manual" })}
             disabled={isRefreshing}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
-          <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 flex items-center gap-3 shadow-sm">
+          <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
             <Clock size={18} className="text-orange-500" />
             <span className="text-lg font-bold tabular-nums">
               {currentTime.toLocaleTimeString([], {
@@ -607,50 +760,7 @@ function OverviewTab({ currentTime }) {
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {liveBreakEmployees.map((emp) => (
-            <button
-              key={`live-${emp.auth_id}`}
-              type="button"
-              onClick={() =>
-                openEmployeeLogs(employees.find((item) => item.auth_id === emp.auth_id) ?? emp)
-              }
-              className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-gray-50/70 p-4 text-left transition-all hover:bg-white hover:shadow-sm"
-            >
-              {emp.avatarSrc ? (
-                <img
-                  src={emp.avatarSrc}
-                  alt={`${emp.name} profile`}
-                  className="h-14 w-14 rounded-full border-2 border-orange-100 object-cover object-center shrink-0"
-                />
-              ) : (
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50 font-black text-xl text-orange-500">
-                  {emp.name
-                    .split(" ")
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((part) => part[0])
-                    .join("")
-                    .toUpperCase() || "?"}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="truncate text-base font-black text-gray-800">{emp.name}</p>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${emp.toneClass}`}>
-                      {emp.statusLabel}
-                    </span>
-                    {emp.countdownSeconds !== null && (
-                      <span className="text-xs font-black tabular-nums text-orange-600">
-                        {formatCountdown(emp.countdownSeconds)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <p className="truncate text-xs font-medium text-gray-500">{emp.email}</p>
-              </div>
-            </button>
-          ))}
+          {liveBreakEmployees.map((emp) => renderStatusCard(emp, "live"))}
 
           {liveBreakEmployees.length === 0 && (
             <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
@@ -659,7 +769,62 @@ function OverviewTab({ currentTime }) {
                 No employees are currently in this break status.
               </p>
               <p className="mt-1 text-xs font-medium text-gray-400">
-                This panel refreshes automatically every 30 seconds.
+                This panel refreshes automatically every 15 seconds.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-lg font-black text-gray-800">Duty Status</h3>
+            <p className="text-sm font-medium text-gray-500">
+              Employees grouped by active shift progress
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {statusTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeStatusTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveStatusTab(tab.id)}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition-all ${
+                    isActive
+                      ? "border-orange-200 bg-orange-50 text-orange-700"
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] ${
+                      isActive ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {statusEmployees.map((emp) => renderStatusCard(emp, activeStatusTab))}
+
+          {statusEmployees.length === 0 && (
+            <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
+              <Activity size={20} className="mx-auto text-gray-300" />
+              <p className="mt-3 text-sm font-bold text-gray-600">
+                No employees match this duty status.
+              </p>
+              <p className="mt-1 text-xs font-medium text-gray-400">
+                The list refreshes automatically every 15 seconds.
               </p>
             </div>
           )}
@@ -670,17 +835,16 @@ function OverviewTab({ currentTime }) {
         <div className="flex items-end justify-between gap-3">
           <div>
             <h3 className="text-lg font-black text-gray-800">Employees</h3>
-            <p className="text-gray-500 text-sm font-medium">
+            <p className="text-sm font-medium text-gray-500">
               Click an employee card to view full time logs
             </p>
           </div>
-       
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {employeeCards}
           {employees.length === 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 text-sm text-gray-500">
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 text-sm text-gray-500">
               No employees found.
             </div>
           )}
