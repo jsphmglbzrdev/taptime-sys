@@ -14,6 +14,7 @@ import { supabase } from "../../../utils/supabase";
 
 
 function OverviewTab({ currentTime }) {
+  const AUTO_REFRESH_SECONDS = 30;
   const MORNING_BREAK_MIN = 15;
   const AFTERNOON_BREAK_MIN = 15;
   const LUNCH_BREAK_MIN = 60;
@@ -82,17 +83,35 @@ function OverviewTab({ currentTime }) {
     loadTodayEntries();
   }, [loadTodayEntries]);
 
-  const refreshOverview = useCallback(async () => {
+  const refreshOverview = useCallback(async ({ silent = false, includeEmployees = true } = {}) => {
     setIsRefreshing(true);
     try {
-      await Promise.all([loadEmployees(), loadTodayEntries()]);
-      toast.success("Monitoring dashboard refreshed.");
+      const tasks = [loadTodayEntries()];
+      if (includeEmployees) {
+        tasks.push(loadEmployees());
+      }
+      await Promise.all(tasks);
+      if (!silent) {
+        toast.success("Monitoring dashboard refreshed.");
+      }
     } catch {
-      toast.error("Failed to refresh monitoring dashboard.");
+      if (!silent) {
+        toast.error("Failed to refresh monitoring dashboard.");
+      }
     } finally {
       setIsRefreshing(false);
     }
   }, [loadEmployees, loadTodayEntries]);
+
+  useEffect(() => {
+    const autoRefreshId = window.setInterval(() => {
+      refreshOverview({ silent: true, includeEmployees: false });
+    }, AUTO_REFRESH_SECONDS * 1000);
+
+    return () => {
+      window.clearInterval(autoRefreshId);
+    };
+  }, [AUTO_REFRESH_SECONDS, refreshOverview]);
 
   useEffect(() => {
     const overviewChannel = supabase
@@ -236,9 +255,10 @@ function OverviewTab({ currentTime }) {
         const considerLate = clockInTime
           ? isLate(clockInTime, weeklyShiftData?.shift_start_time, 5)
           : false;
-        const considerUnderTime = clockOutTime
-          ? isUnderTime(clockOutTime, weeklyShiftData?.shift_end_time)
-          : false;
+        const considerUnderTime =
+          !!clockOutTime &&
+          !!weeklyShiftData?.shift_end_time &&
+          isUnderTime(clockOutTime, weeklyShiftData.shift_end_time);
 
         const clockInDisplay = clockInTime
           ? `${clockInTime}${considerLate ? " - Late" : ""}`
@@ -359,31 +379,68 @@ function OverviewTab({ currentTime }) {
       let statusLabel = "Not started";
       let toneClass = "bg-gray-100 text-gray-600";
       let countdownSeconds = null;
+      let shouldHideFromLiveBreaks = false;
 
       if (hasMorningIn && !hasMorningOut) {
-        statusKey = "morning";
-        statusLabel = "Morning Break";
-        toneClass = "bg-amber-50 text-amber-700";
         countdownSeconds = getRemainingSeconds(
           entry?.morning_break_in_at,
           MORNING_BREAK_MIN,
         );
+        shouldHideFromLiveBreaks = countdownSeconds === 0;
+        if (shouldHideFromLiveBreaks) {
+          statusKey = hasClockOut ? "completed" : hasClockIn ? "working" : "idle";
+          statusLabel = hasClockOut ? "Shift Completed" : hasClockIn ? "Working" : "Not started";
+          toneClass = hasClockOut
+            ? "bg-green-50 text-green-700"
+            : hasClockIn
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-gray-100 text-gray-600";
+          countdownSeconds = null;
+        } else {
+          statusKey = "morning";
+          statusLabel = "Morning Break";
+          toneClass = "bg-amber-50 text-amber-700";
+        }
       } else if (hasLunchIn && !hasLunchOut) {
-        statusKey = "lunch";
-        statusLabel = "Lunch Break";
-        toneClass = "bg-orange-50 text-orange-700";
         countdownSeconds = getRemainingSeconds(
           entry?.lunch_break_in_at,
           LUNCH_BREAK_MIN,
         );
+        shouldHideFromLiveBreaks = countdownSeconds === 0;
+        if (shouldHideFromLiveBreaks) {
+          statusKey = hasClockOut ? "completed" : hasClockIn ? "working" : "idle";
+          statusLabel = hasClockOut ? "Shift Completed" : hasClockIn ? "Working" : "Not started";
+          toneClass = hasClockOut
+            ? "bg-green-50 text-green-700"
+            : hasClockIn
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-gray-100 text-gray-600";
+          countdownSeconds = null;
+        } else {
+          statusKey = "lunch";
+          statusLabel = "Lunch Break";
+          toneClass = "bg-orange-50 text-orange-700";
+        }
       } else if (hasAfternoonIn && !hasAfternoonOut) {
-        statusKey = "afternoon";
-        statusLabel = "Afternoon Break";
-        toneClass = "bg-yellow-50 text-yellow-700";
         countdownSeconds = getRemainingSeconds(
           entry?.afternoon_break_in_at,
           AFTERNOON_BREAK_MIN,
         );
+        shouldHideFromLiveBreaks = countdownSeconds === 0;
+        if (shouldHideFromLiveBreaks) {
+          statusKey = hasClockOut ? "completed" : hasClockIn ? "working" : "idle";
+          statusLabel = hasClockOut ? "Shift Completed" : hasClockIn ? "Working" : "Not started";
+          toneClass = hasClockOut
+            ? "bg-green-50 text-green-700"
+            : hasClockIn
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-gray-100 text-gray-600";
+          countdownSeconds = null;
+        } else {
+          statusKey = "afternoon";
+          statusLabel = "Afternoon Break";
+          toneClass = "bg-yellow-50 text-yellow-700";
+        }
       } else if (hasClockOut) {
         statusKey = "completed";
         statusLabel = "Shift Completed";
@@ -404,6 +461,7 @@ function OverviewTab({ currentTime }) {
         statusLabel,
         toneClass,
         countdownSeconds,
+        shouldHideFromLiveBreaks,
       };
     });
   }, [
@@ -431,26 +489,33 @@ function OverviewTab({ currentTime }) {
         label: "All Breaks",
         icon: Coffee,
         count: liveStatuses.filter((item) =>
-          ["morning", "lunch", "afternoon"].includes(item.statusKey),
+          ["morning", "lunch", "afternoon"].includes(item.statusKey) &&
+          !item.shouldHideFromLiveBreaks,
         ).length,
       },
       {
         id: "morning",
         label: "Morning",
         icon: SunMedium,
-        count: liveStatuses.filter((item) => item.statusKey === "morning").length,
+        count: liveStatuses.filter(
+          (item) => item.statusKey === "morning" && !item.shouldHideFromLiveBreaks,
+        ).length,
       },
       {
         id: "lunch",
         label: "Lunch",
         icon: Coffee,
-        count: liveStatuses.filter((item) => item.statusKey === "lunch").length,
+        count: liveStatuses.filter(
+          (item) => item.statusKey === "lunch" && !item.shouldHideFromLiveBreaks,
+        ).length,
       },
       {
         id: "afternoon",
         label: "Afternoon",
         icon: Sunset,
-        count: liveStatuses.filter((item) => item.statusKey === "afternoon").length,
+        count: liveStatuses.filter(
+          (item) => item.statusKey === "afternoon" && !item.shouldHideFromLiveBreaks,
+        ).length,
       },
     ],
     [liveStatuses],
@@ -459,10 +524,13 @@ function OverviewTab({ currentTime }) {
   const liveBreakEmployees = useMemo(() => {
     if (activeLiveTab === "all") {
       return liveStatuses.filter((item) =>
-        ["morning", "lunch", "afternoon"].includes(item.statusKey),
+        ["morning", "lunch", "afternoon"].includes(item.statusKey) &&
+        !item.shouldHideFromLiveBreaks,
       );
     }
-    return liveStatuses.filter((item) => item.statusKey === activeLiveTab);
+    return liveStatuses.filter(
+      (item) => item.statusKey === activeLiveTab && !item.shouldHideFromLiveBreaks,
+    );
   }, [activeLiveTab, liveStatuses]);
 
   return (
@@ -475,7 +543,7 @@ function OverviewTab({ currentTime }) {
         <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
           <button
             type="button"
-            onClick={refreshOverview}
+            onClick={() => refreshOverview()}
             disabled={isRefreshing}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >

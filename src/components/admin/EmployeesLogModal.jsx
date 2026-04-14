@@ -173,16 +173,19 @@ function EmployeeLogsModal({
             <tbody className="divide-y divide-gray-50">
               {rows.map((r) => {
                 const { statusLabel, statusTone } = calculateStatusWithColor(r);
+                const formattedClockIn = formatTime(r?.clock_in_at);
+                const formattedClockOut = formatTime(r?.clock_out_at);
 
                 const considerLate = isLate(
-                  formatTime(r?.clock_in_at),
+                  formattedClockIn,
                   weeklyShift?.shift_start_time,
                   5,
                 );
-                const considerUnderTime = isUnderTime(
-                  formatTime(r?.clock_out_at),
-                  weeklyShift?.shift_end_time,
-                );
+                const considerUnderTime =
+                  !!r?.clock_out_at &&
+                  formattedClockOut !== "-" &&
+                  !!weeklyShift?.shift_end_time &&
+                  isUnderTime(formattedClockOut, weeklyShift.shift_end_time);
 
                 return (
                   <tr key={r.id} className="text-sm">
@@ -193,7 +196,7 @@ function EmployeeLogsModal({
                       {r.scheduled_shift}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.clock_in_at)}{" "}
+                      {formattedClockIn}{" "}
                       {considerLate && (
                         <span className="bg-orange-600 text-white px-2 rounded-2xl text-xs font-bold">
                           Late
@@ -219,7 +222,7 @@ function EmployeeLogsModal({
                       {formatTime(r.lunch_break_out_at)}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.clock_out_at)}{" "}
+                      {formattedClockOut}{" "}
                       {considerUnderTime && (
                         <span className="bg-orange-600 text-white px-2 rounded-2xl text-xs font-bold">
                           Undertime
