@@ -4,6 +4,7 @@ import { signIn } from "../utils/auth";
 import { useLoading } from "../context/LoadingContext";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
+import logo from "../../public/surf2sawa.png";
 
 export default function LoginForm({ onLogin }) {
   const { setLoading } = useLoading();
@@ -45,15 +46,14 @@ export default function LoginForm({ onLogin }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 sm:p-6 lg:p-8">
+    <div>
       {/* Decorative Background Elements */}
-      <div className="absolute top-0 left-0 w-full h-1/2 bg-orange-500 -z-10 rounded-b-[50px] md:rounded-b-[100px] shadow-lg"></div>
 
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+      <div className="w-96 bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all">
         <div className="p-8">
           <div className="text-center mb-10">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
-              <Lock className="w-8 h-8 text-orange-600" />
+              <img src={logo} alt="" />
             </div>
             <h2 className="text-3xl font-bold text-gray-800">Welcome Back</h2>
             <p className="text-gray-500 mt-2">
