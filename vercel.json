@@ -1,10 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/auto-clock-out",
-      "schedule": "*/10 * * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/(.*)",
