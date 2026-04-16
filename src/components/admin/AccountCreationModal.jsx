@@ -16,6 +16,7 @@ import {
 import { useLoading } from "../../context/LoadingContext";
 import { createUser } from "../../utils/auth";
 import { toast } from "react-toastify";
+import { useAuth } from "../../context/AuthContext";
 /**
  * Modernized Form Row Component
  * Defined OUTSIDE the main component to prevent re-mounting and focus loss during typing.
@@ -36,6 +37,7 @@ const FormRow = ({ label, children, icon: Icon }) => (
 
 const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
   const { setLoading } = useLoading();
+  const { user } = useAuth();
 
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,6 +79,13 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
         email: formData.email,
         password: formData.password,
         role: formData.role,
+        auditContext: {
+          actor: {
+            auth_id: user?.id,
+            email: user?.email,
+            role: "Admin",
+          },
+        },
       });
 
       if (response.success) {

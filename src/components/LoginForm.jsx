@@ -4,7 +4,7 @@ import { signIn } from "../utils/auth";
 import { useLoading } from "../context/LoadingContext";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
-import logo from "../../public/surf2sawa.png";
+import logo from "/surf2sawa.png";
 
 export default function LoginForm({ onLogin }) {
   const { setLoading } = useLoading();
@@ -12,19 +12,23 @@ export default function LoginForm({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // LoginPage.jsx or MainLogin.jsx
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    const normalizedUsername = username.trim().toLowerCase();
+    setIsSubmitting(true);
     setLoading(true);
 
     try {
-
-      if (!username.includes("@")) {
+      if (!normalizedUsername.includes("@")) {
         return toast.error("Username must be an email address.");
       }
 
-      const response = await signIn(username, password);
+      const response = await signIn(normalizedUsername, password);
 
       if (!response.success) {
         toast.error(response.error); // show error toasts
@@ -41,6 +45,7 @@ export default function LoginForm({ onLogin }) {
     } finally {
       setUsername("");
       setPassword("");
+      setIsSubmitting(false);
       setLoading(false);
     }
   };
@@ -115,9 +120,11 @@ export default function LoginForm({ onLogin }) {
 
             {/* Submit Button */}
             <button
+              type="submit"
+              disabled={isSubmitting}
               className={`w-full flex cursor-pointer justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all transform active:scale-[0.98] }`}
             >
-              Sign In
+              {isSubmitting ? "Signing In..." : "Sign In"}
             </button>
           </form>
         </div>

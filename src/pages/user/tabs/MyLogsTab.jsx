@@ -10,7 +10,11 @@ import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
-import { isLate, isUnderTime } from "../../../utils/shiftSchedule";
+import {
+  getEntryShiftTimes,
+  isLate,
+  isUnderTime,
+} from "../../../utils/shiftSchedule";
 
 const PAGE_SIZE = 10;
 
@@ -21,6 +25,81 @@ function formatTime(value) {
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function getRowStatusMeta(row, weeklyShift) {
+  const hasClockIn = !!row.clock_in_at;
+  const hasClockOut = !!row.clock_out_at;
+  const hasMorningIn = !!row.morning_break_in_at;
+  const hasMorningOut = !!row.morning_break_out_at;
+  const hasAfternoonIn = !!row.afternoon_break_in_at;
+  const hasAfternoonOut = !!row.afternoon_break_out_at;
+  const hasLunchIn = !!row.lunch_break_in_at;
+  const hasLunchOut = !!row.lunch_break_out_at;
+  const hasOvertimeIn = !!row.overtime_start;
+  const hasOvertimeOut = !!row.overtime_end;
+  const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
+  const hasOvertimeCompleted = hasOvertimeIn && hasOvertimeOut;
+
+  const { shiftStart, shiftEnd } = getEntryShiftTimes(row, weeklyShift);
+  const formattedClockIn = hasClockIn ? formatTime(row.clock_in_at) : "";
+  const formattedClockOut = hasClockOut ? formatTime(row.clock_out_at) : "";
+
+  const isLateArrival =
+    !!formattedClockIn &&
+    formattedClockIn !== "-" &&
+    !!shiftStart &&
+    isLate(formattedClockIn, shiftStart, 5);
+
+  const isEarlyClockOut =
+    !!formattedClockOut &&
+    formattedClockOut !== "-" &&
+    !!shiftEnd &&
+    isUnderTime(formattedClockOut, shiftEnd);
+
+  let label = "Not Started";
+  let tone = "orange";
+
+  if (hasOvertimeCompleted) {
+    label = "Completed with Overtime";
+    tone = "green";
+  } else if (hasOvertimeActive) {
+    label = "Overtime Ongoing";
+    tone = "orange";
+  } else if (hasClockOut) {
+    if (isLateArrival && isEarlyClockOut) {
+      label = "Completed Late and Undertime";
+      tone = "orange";
+    } else if (isEarlyClockOut) {
+      label = "Completed with Undertime";
+      tone = "orange";
+    } else if (isLateArrival) {
+      label = "Completed Late";
+      tone = "orange";
+    } else {
+      label = "Shift Completed";
+      tone = "green";
+    }
+  } else if (hasMorningIn && !hasMorningOut) {
+    label = "Morning Break";
+    tone = "orange";
+  } else if (hasAfternoonIn && !hasAfternoonOut) {
+    label = "Afternoon Break";
+    tone = "orange";
+  } else if (hasLunchIn && !hasLunchOut) {
+    label = "Lunch Break";
+    tone = "orange";
+  } else if (hasClockIn) {
+    label = isLateArrival ? "Working Late" : "Working";
+    tone = isLateArrival ? "orange" : "green";
+  }
+
+  return {
+    label,
+    tone,
+    isLateArrival,
+    isEarlyClockOut,
+  };
 }
 
 export default function MyLogsTab() {
@@ -114,15 +193,6 @@ export default function MyLogsTab() {
       if (res.error) throw res.error;
 
       const data = (res.data ?? []).map((r) => {
-        const [shiftStartTime, shiftEndTime] =
-          r.scheduled_shift?.split(/\s*-\s*/).map((value) => value.trim()) ?? ["", ""];
-
-        const effectiveShiftStart =
-          shiftStartTime || weeklyShift?.shift_start_time || "";
-        const effectiveShiftEnd =
-          shiftEndTime || weeklyShift?.shift_end_time || "";
-
-        // Format times
         const clockInTime = r.clock_in_at
           ? new Date(r.clock_in_at).toLocaleTimeString([], {
               hour: "2-digit",
@@ -135,51 +205,17 @@ export default function MyLogsTab() {
               minute: "2-digit",
             })
           : "";
+        const { label, isLateArrival, isEarlyClockOut } = getRowStatusMeta(
+          r,
+          weeklyShift,
+        );
 
-        // Calculate status
-        const consideredLate = clockInTime
-          ? isLate(clockInTime, effectiveShiftStart, 5)
-          : false;
-        const consideredUnderTime = clockOutTime
-          ? isUnderTime(clockOutTime, effectiveShiftEnd)
-          : false;
-
-        // Append status to times
         const clockInDisplay = clockInTime
-          ? `${clockInTime}${consideredLate ? " - Late" : ""}`
+          ? `${clockInTime}${isLateArrival ? " - Late" : ""}`
           : "";
         const clockOutDisplay = clockOutTime
-          ? `${clockOutTime}${consideredUnderTime ? " - Undertime" : ""}`
+          ? `${clockOutTime}${isEarlyClockOut ? " - Undertime" : ""}`
           : "";
-					
-	        const hasClockIn = !!r.clock_in_at;
-        const hasClockOut = !!r.clock_out_at;
-        const hasMorningIn = !!r.morning_break_in_at;
-        const hasMorningOut = !!r.morning_break_out_at;
-        const hasAfternoonIn = !!r.afternoon_break_in_at;
-        const hasAfternoonOut = !!r.afternoon_break_out_at;
-        const hasLunchIn = !!r.lunch_break_in_at;
-        const hasLunchOut = !!r.lunch_break_out_at;
-        const hasOvertimeIn = !!r.overtime_start;
-        const hasOvertimeOut = !!r.overtime_end;
-        const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
-        const hasOvertimeCompleted = hasOvertimeIn && hasOvertimeOut;
-
-        const statusLabel = hasOvertimeCompleted
-          ? "Shift Completed with Overtime"
-          : hasOvertimeActive
-            ? "Overtime"
-            : hasClockOut
-              ? "Shift Completed"
-              : hasMorningIn && !hasMorningOut
-                ? "Morning Break"
-                : hasAfternoonIn && !hasAfternoonOut
-                  ? "Afternoon Break"
-                  : hasLunchIn && !hasLunchOut
-                    ? "Lunch Break"
-                    : hasClockIn
-                      ? "Working"
-                      : "Not started";
 
         return {
           Date: r.shift_date,
@@ -234,7 +270,7 @@ export default function MyLogsTab() {
                 minute: "2-digit",
               })
             : "",
-          Status: statusLabel,
+          Status: label,
         };
       });
 
@@ -332,58 +368,8 @@ export default function MyLogsTab() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map((r) => {
-                const hasClockIn = !!r.clock_in_at;
-                const hasClockOut = !!r.clock_out_at;
-                const hasMorningIn = !!r.morning_break_in_at;
-                const hasMorningOut = !!r.morning_break_out_at;
-                const hasAfternoonIn = !!r.afternoon_break_in_at;
-                const hasAfternoonOut = !!r.afternoon_break_out_at;
-                const hasLunchIn = !!r.lunch_break_in_at;
-                const hasLunchOut = !!r.lunch_break_out_at;
-                const hasOvertimeIn = !!r.overtime_start;
-                const hasOvertimeOut = !!r.overtime_end;
-                const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
-                const hasOvertimeCompleted = hasOvertimeIn && hasOvertimeOut;
-
-                const considerLate = isLate(
-                  formatTime(r?.clock_in_at),
-                  weeklyShift?.shift_start_time,
-                  5,
-                );
-                const considerUnderTime = isUnderTime(
-                  formatTime(r?.clock_out_at),
-                  weeklyShift?.shift_end_time,
-                );
-
-                const statusLabel = hasOvertimeCompleted
-                  ? "Shift Completed with Overtime"
-                  : hasOvertimeActive
-                    ? "Overtime"
-                    : hasClockOut
-                      ? "Shift Completed"
-                      : hasMorningIn && !hasMorningOut
-                        ? "Morning Break"
-                        : hasAfternoonIn && !hasAfternoonOut
-                          ? "Afternoon Break"
-                          : hasLunchIn && !hasLunchOut
-                            ? "Lunch Break"
-                            : hasClockIn
-                              ? "Working"
-                              : "Not started";
-
-                const statusTone = !hasClockIn
-                  ? "orange"
-                  : hasOvertimeActive
-                    ? "orange"
-                    : hasOvertimeCompleted || hasClockOut
-                      ? "green"
-                      : hasMorningIn && !hasMorningOut
-                        ? "orange"
-                        : hasAfternoonIn && !hasAfternoonOut
-                          ? "orange"
-                          : hasLunchIn && !hasLunchOut
-                            ? "orange"
-                            : "green";
+                const { label: statusLabel, tone: statusTone, isLateArrival, isEarlyClockOut } =
+                  getRowStatusMeta(r, weeklyShift);
 
                 return (
                   <tr key={r.id} className="text-sm">
@@ -395,7 +381,7 @@ export default function MyLogsTab() {
                     </td>
                     <td className="px-6 py-4 text-gray-500">
                       {formatTime(r.clock_in_at)}{" "}
-                      {considerLate && (
+                      {r.clock_in_at && isLateArrival && (
                         <span className="bg-orange-600 text-white px-2 rounded-2xl">
                           Late
                         </span>
@@ -421,7 +407,7 @@ export default function MyLogsTab() {
                     </td>
                     <td className="px-6 py-4 text-gray-500">
                       {formatTime(r.clock_out_at)}{" "}
-                      {considerUnderTime && (
+                      {r.clock_out_at && isEarlyClockOut && (
                         <span className="bg-orange-600 text-white px-2 rounded-2xl">
                           Undertime
                         </span>

@@ -20,7 +20,11 @@ import { useLoading } from "../../../context/LoadingContext";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
 import EmployeeLogsModal from "../../../components/admin/EmployeesLogModal";
-import { isLate, isUnderTime } from "../../../utils/shiftSchedule";
+import {
+  getEntryShiftTimes,
+  isLate,
+  isUnderTime,
+} from "../../../utils/shiftSchedule";
 import { supabase } from "../../../utils/supabase";
 
 function OverviewTab({ currentTime }) {
@@ -228,22 +232,6 @@ function OverviewTab({ currentTime }) {
     if (!selected) return;
     setIsExporting(true);
     try {
-      let weeklyShiftData = null;
-      if (logs.length > 0) {
-        const shiftDate = logs[0]?.shift_date;
-        const res = await supabase
-          .from("employee_weekly_shifts")
-          .select("shift_start_time, shift_end_time")
-          .eq("employee_auth_id", selected.auth_id)
-          .lte("week_start", shiftDate)
-          .gte("week_end", shiftDate)
-          .maybeSingle();
-
-        if (res.data) {
-          weeklyShiftData = res.data;
-        }
-      }
-
       const data = (logs ?? []).map((r) => {
         const hasClockIn = !!r.clock_in_at;
         const hasClockOut = !!r.clock_out_at;
@@ -266,6 +254,7 @@ function OverviewTab({ currentTime }) {
                   ? "Working"
                   : "Not started";
 
+        const { shiftStart, shiftEnd } = getEntryShiftTimes(r);
         const clockInTime = r.clock_in_at
           ? new Date(r.clock_in_at).toLocaleTimeString([], {
               hour: "2-digit",
@@ -280,12 +269,10 @@ function OverviewTab({ currentTime }) {
           : "";
 
         const considerLate = clockInTime
-          ? isLate(clockInTime, weeklyShiftData?.shift_start_time, 5)
+          ? !!shiftStart && isLate(clockInTime, shiftStart, 5)
           : false;
         const considerUnderTime =
-          !!clockOutTime &&
-          !!weeklyShiftData?.shift_end_time &&
-          isUnderTime(clockOutTime, weeklyShiftData.shift_end_time);
+          !!clockOutTime && !!shiftEnd && isUnderTime(clockOutTime, shiftEnd);
 
         const clockInDisplay = clockInTime
           ? `${clockInTime}${considerLate ? " - Late" : ""}`

@@ -5,10 +5,18 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Clock, CheckCircle2, AlertCircle, ChevronRight } from "lucide-react";
+import {
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import Sidebar from "../../components/user/Sidebar";
 import Header from "../../components/user/Header";
 import { useAuth } from "../../context/AuthContext";
+import { useAppShell } from "../../context/AppShellContext";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
 import { supabase } from "../../utils/supabase";
@@ -16,7 +24,15 @@ import { toast } from "react-toastify";
 import ConfirmationBox from "../../components/ConfirmationBox";
 import MyLogsTab from "./tabs/MyLogsTab";
 import ProfileTab from "./tabs/ProfileTab";
+import { logAuditEvent } from "../../utils/auditTrail";
+import { emitAvatarUpdated } from "../../utils/avatar";
 import {
+  buildUserAccountNotification,
+  buildUserShiftNotification,
+} from "../../utils/notificationEvents";
+import {
+  getAutoClockOutDeadline,
+  getEntryShiftTimes,
   isLate,
   isUnderTime,
   evaluateClockIn,
@@ -36,12 +52,42 @@ function getBreakStartWindowStatus(date = new Date()) {
   };
 }
 
+const ATTENDANCE_GUIDE_ITEMS = [
+  {
+    title: "Time In",
+    description:
+      "Clock-in opens 1 hour before your shift starts. You can still time in after start, but anything beyond the 5-minute grace period is marked late.",
+  },
+  {
+    title: "Time Out",
+    description:
+      "Clock out when your workday ends. If you forget, the system automatically records clock-out 10 minutes after your scheduled shift end.",
+  },
+  {
+    title: "Break Time",
+    description:
+      "Morning and afternoon breaks are 15 minutes each. If a break stays open too long, the system closes it automatically based on the break rules.",
+  },
+  {
+    title: "Lunch Break",
+    description:
+      "Lunch break is 60 minutes and is intended for the 12:00 PM to 1:00 PM window. Please end lunch on time so your attendance stays accurate.",
+  },
+  {
+    title: "Overtime",
+    description:
+      "Start overtime only after your regular shift has been completed. Overtime keeps running until you manually end it.",
+  },
+];
+
 export default function UserDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const { user } = useAuth();
+  const { addNotification } = useAppShell();
   const { setLoading } = useLoading();
   const [history, setHistory] = useState([]);
   const [todayEntry, setTodayEntry] = useState(null);
@@ -54,9 +100,12 @@ export default function UserDashboard() {
     afternoon: false,
     lunch: false,
   });
+  const profileNotificationSnapshotRef = useRef(null);
+  const shiftNotificationSnapshotRef = useRef(null);
   const lastAutoResetKeyRef = useRef(null);
   const todayEntryRef = useRef(null);
   const updateTodayEntryRef = useRef(null);
+  const fetchAttendanceRef = useRef(null);
 
   // Real-time clock effect
   useEffect(() => {
@@ -119,12 +168,181 @@ export default function UserDashboard() {
     setWeeklyShift(res.data ?? null);
   }, [getShiftDate, user]);
 
+  const syncNotificationSnapshots = useCallback(
+    async ({ notify = false } = {}) => {
+      if (!user?.id) return;
+
+      const today = getShiftDate(new Date());
+      const [profileRes, shiftRes] = await Promise.all([
+        supabase
+          .from("user_profiles")
+          .select("auth_id, first_name, last_name, email, role, avatar_url")
+          .eq("auth_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("employee_weekly_shifts")
+          .select("employee_auth_id, week_start, week_end, shift_start_time, shift_end_time")
+          .eq("employee_auth_id", user.id)
+          .lte("week_start", today)
+          .gte("week_end", today)
+          .maybeSingle(),
+      ]);
+
+      if (profileRes.error) throw profileRes.error;
+      if (shiftRes.error) throw shiftRes.error;
+
+      const profileRow = profileRes.data ?? null;
+      const shiftRow = shiftRes.data ?? null;
+      setWeeklyShift(shiftRow);
+
+      const nextProfileSnapshot = profileRow
+        ? JSON.stringify({
+            first_name: profileRow.first_name ?? "",
+            last_name: profileRow.last_name ?? "",
+            email: profileRow.email ?? "",
+            role: profileRow.role ?? "",
+            avatar_url: profileRow.avatar_url ?? "",
+          })
+        : null;
+
+      const nextShiftSnapshot = shiftRow
+        ? JSON.stringify({
+            week_start: shiftRow.week_start ?? "",
+            week_end: shiftRow.week_end ?? "",
+            shift_start_time: shiftRow.shift_start_time ?? "",
+            shift_end_time: shiftRow.shift_end_time ?? "",
+          })
+        : null;
+
+      if (
+        notify &&
+        profileNotificationSnapshotRef.current &&
+        nextProfileSnapshot &&
+        profileNotificationSnapshotRef.current !== nextProfileSnapshot
+      ) {
+        await addNotification({
+          dedupeKey: `user-profile-snapshot-${user.id}-${nextProfileSnapshot}`,
+          kind: "account",
+          title: "Account updated",
+          message:
+            "Your account details were updated. Review your profile for the latest changes.",
+        });
+      }
+
+      if (notify && shiftNotificationSnapshotRef.current !== nextShiftSnapshot) {
+        if (!shiftNotificationSnapshotRef.current && nextShiftSnapshot) {
+          await addNotification({
+            dedupeKey: `user-shift-snapshot-insert-${user.id}-${nextShiftSnapshot}`,
+            kind: "shift",
+            title: "Shift assigned",
+            message: `Your weekly shift is now ${shiftRow.week_start} to ${shiftRow.week_end}.`,
+          });
+        } else if (shiftNotificationSnapshotRef.current && nextShiftSnapshot) {
+          await addNotification({
+            dedupeKey: `user-shift-snapshot-update-${user.id}-${nextShiftSnapshot}`,
+            kind: "shift",
+            title: "Shift updated",
+            message: `Your assigned shift was changed to ${shiftRow.week_start} through ${shiftRow.week_end}.`,
+          });
+        } else if (shiftNotificationSnapshotRef.current && !nextShiftSnapshot) {
+          await addNotification({
+            dedupeKey: `user-shift-snapshot-delete-${user.id}`,
+            kind: "shift",
+            title: "Shift removed",
+            message:
+              "Your assigned weekly shift was removed. Please contact your admin for the updated schedule.",
+          });
+        }
+      }
+
+      profileNotificationSnapshotRef.current = nextProfileSnapshot;
+      shiftNotificationSnapshotRef.current = nextShiftSnapshot;
+    },
+    [addNotification, getShiftDate, user?.id],
+  );
+
   useEffect(() => {
     if (!user) return;
     Promise.all([fetchAttendance(), fetchWeeklyShift()]).catch(() => {
       toast.error("Failed to load dashboard data.");
     });
   }, [user, fetchAttendance, fetchWeeklyShift]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    syncNotificationSnapshots({ notify: false }).catch(() => {});
+    const pollId = window.setInterval(() => {
+      syncNotificationSnapshots({ notify: true }).catch(() => {});
+    }, 20000);
+
+    return () => {
+      window.clearInterval(pollId);
+    };
+  }, [syncNotificationSnapshots, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    const notificationChannel = supabase
+      .channel(`user-notifications-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "user_profiles",
+          filter: `auth_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          const nextRow = payload?.new ?? null;
+          profileNotificationSnapshotRef.current = nextRow
+            ? JSON.stringify({
+                first_name: nextRow.first_name ?? "",
+                last_name: nextRow.last_name ?? "",
+                email: nextRow.email ?? "",
+                role: nextRow.role ?? "",
+                avatar_url: nextRow.avatar_url ?? "",
+              })
+            : profileNotificationSnapshotRef.current;
+          emitAvatarUpdated();
+          const nextNotification = buildUserAccountNotification(payload);
+          if (nextNotification) {
+            await addNotification(nextNotification);
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "employee_weekly_shifts",
+          filter: `employee_auth_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          const nextRow = payload?.new ?? null;
+          shiftNotificationSnapshotRef.current = nextRow
+            ? JSON.stringify({
+                week_start: nextRow.week_start ?? "",
+                week_end: nextRow.week_end ?? "",
+                shift_start_time: nextRow.shift_start_time ?? "",
+                shift_end_time: nextRow.shift_end_time ?? "",
+              })
+            : null;
+          await fetchWeeklyShift();
+          const nextNotification = buildUserShiftNotification(payload);
+          if (nextNotification) {
+            await addNotification(nextNotification);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(notificationChannel);
+    };
+  }, [addNotification, fetchWeeklyShift, user?.id]);
 
   const todayShiftDate = useMemo(
     () => getShiftDate(new Date()),
@@ -163,12 +381,15 @@ export default function UserDashboard() {
   const hasOvertimeStart = !!todayEntry?.overtime_start;
   const hasOvertimeEnd = !!todayEntry?.overtime_end;
   const isOvertimeActive = hasOvertimeStart && !hasOvertimeEnd;
+  const hasAssignedShift =
+    !!weeklyShift?.shift_start_time && !!weeklyShift?.shift_end_time;
 
   const canClockInNow = useMemo(() => {
     if (isShiftActive) return true;
     if (isShiftCompleted) return false;
+    if (!hasAssignedShift) return false;
     return clockInEval.allowed;
-  }, [clockInEval.allowed, isShiftActive, isShiftCompleted]);
+  }, [clockInEval.allowed, hasAssignedShift, isShiftActive, isShiftCompleted]);
 
   const isMorningBreakActive =
     !!todayEntry?.morning_break_in_at && !todayEntry?.morning_break_out_at;
@@ -205,6 +426,15 @@ export default function UserDashboard() {
     isOvertimeActive,
     todayEntry,
   ]);
+
+  const auditActor = useMemo(
+    () => ({
+      auth_id: user?.id,
+      email: user?.email,
+      role: "Employee",
+    }),
+    [user?.email, user?.id],
+  );
 
   const countdown = useMemo(() => {
     const nowMs = currentTime.getTime();
@@ -259,7 +489,7 @@ export default function UserDashboard() {
             );
 
       return (
-        <div className="flex items-end gap-0.5">
+        <div className="flex items-end gap-0.5">  
           {Array.from({ length: totalLines }).map((_, idx) => {
             const filled = idx < filledLines;
             return (
@@ -302,8 +532,16 @@ export default function UserDashboard() {
     updateTodayEntryRef.current = updateTodayEntry;
   }, [updateTodayEntry]);
 
+  useEffect(() => {
+    fetchAttendanceRef.current = fetchAttendance;
+  }, [fetchAttendance]);
+
   const handleClockIn = useCallback(async () => {
     if (!user || isShiftActive) return;
+    if (!hasAssignedShift) {
+      toast.error("You cannot clock in until an admin assigns your shift.");
+      return;
+    }
 
     const shiftDate = getShiftDate(new Date());
     const win =
@@ -366,6 +604,14 @@ export default function UserDashboard() {
       } else {
         toast.success("Clocked in.");
       }
+      await logAuditEvent({
+        eventType: ev.late ? "warning" : "info",
+        module: "user",
+        action: "clock_in",
+        description: `${user.email} clocked in${ev.late ? " late" : ""}.`,
+        actor: auditActor,
+        metadata: { shift_date: shiftDate, late: Boolean(ev.late) },
+      });
     } catch (err) {
       toast.error("Failed to clock in.");
     } finally {
@@ -375,6 +621,7 @@ export default function UserDashboard() {
   }, [
     fetchAttendance,
     getShiftDate,
+    hasAssignedShift,
     isShiftActive,
     setLoading,
     user,
@@ -393,6 +640,14 @@ export default function UserDashboard() {
       await fetchAttendance();
 
       toast.success("Clocked out.");
+      await logAuditEvent({
+        eventType: "info",
+        module: "user",
+        action: "clock_out",
+        description: `${user.email} clocked out.`,
+        actor: auditActor,
+        metadata: { clock_out_at: nowIso },
+      });
     } catch (err) {
       toast.error("Failed to clock out.");
     } finally {
@@ -461,6 +716,13 @@ export default function UserDashboard() {
         await updateTodayEntry(patch);
         await fetchAttendance();
         toast.success("Break started.");
+        await logAuditEvent({
+          eventType: "info",
+          module: "user",
+          action: `${breakType}_break_start`,
+          description: `${user.email} started ${breakType} break.`,
+          actor: auditActor,
+        });
       } catch (err) {
         toast.error("Failed to start break.");
       } finally {
@@ -494,6 +756,13 @@ export default function UserDashboard() {
       });
       await fetchAttendance();
       toast.success("Overtime started.");
+      await logAuditEvent({
+        eventType: "info",
+        module: "user",
+        action: "overtime_start",
+        description: `${user.email} started overtime.`,
+        actor: auditActor,
+      });
     } catch (err) {
       toast.error("Failed to start overtime.");
     } finally {
@@ -514,6 +783,13 @@ export default function UserDashboard() {
       });
       await fetchAttendance();
       toast.success("Overtime ended.");
+      await logAuditEvent({
+        eventType: "info",
+        module: "user",
+        action: "overtime_end",
+        description: `${user.email} ended overtime.`,
+        actor: auditActor,
+      });
     } catch (err) {
       toast.error("Failed to end overtime.");
     } finally {
@@ -548,6 +824,14 @@ export default function UserDashboard() {
         await updateTodayEntry(patch);
         await fetchAttendance();
         if (!silent) toast.success("Break ended.");
+        await logAuditEvent({
+          eventType: silent ? "warning" : "info",
+          module: "user",
+          action: `${breakType}_break_end`,
+          description: `${user.email} ${silent ? "automatically ended" : "ended"} ${breakType} break.`,
+          actor: auditActor,
+          metadata: { automatic: silent },
+        });
       } catch (err) {
         toast.error("Failed to end break.");
       } finally {
@@ -705,6 +989,89 @@ export default function UserDashboard() {
     LUNCH_BREAK_MIN,
   ]);
 
+  useEffect(() => {
+    if (!user) return;
+    if (!isShiftActive || isShiftCompleted || isOvertimeActive) return;
+    if (!todayEntry?.shift_date || !weeklyShift?.shift_end_time) return;
+
+    const autoClockOutAt = getAutoClockOutDeadline(
+      todayEntry.shift_date,
+      weeklyShift.shift_end_time,
+    );
+    if (!autoClockOutAt) return;
+
+    const delay = Math.max(0, autoClockOutAt.getTime() - Date.now());
+
+    const id = window.setTimeout(async () => {
+      const entry = todayEntryRef.current;
+      const patchFn = updateTodayEntryRef.current;
+      const refreshFn = fetchAttendanceRef.current;
+
+      if (
+        !entry?.clock_in_at ||
+        entry?.clock_out_at ||
+        entry?.overtime_start ||
+        entry?.shift_date !== todayEntry.shift_date
+      ) {
+        return;
+      }
+
+      const autoClockOutIso = autoClockOutAt.toISOString();
+      const patch = {
+        clock_out_at: autoClockOutIso,
+      };
+
+      if (entry.morning_break_in_at && !entry.morning_break_out_at) {
+        patch.morning_break_out_at = autoClockOutIso;
+      }
+      if (entry.afternoon_break_in_at && !entry.afternoon_break_out_at) {
+        patch.afternoon_break_out_at = autoClockOutIso;
+      }
+      if (entry.lunch_break_in_at && !entry.lunch_break_out_at) {
+        patch.lunch_break_out_at = autoClockOutIso;
+      }
+
+      try {
+        if (!patchFn) return;
+        await patchFn(patch);
+        if (refreshFn) await refreshFn();
+        toast.info(
+          `You were automatically clocked out at ${autoClockOutAt.toLocaleTimeString(
+            [],
+            {
+              hour: "2-digit",
+              minute: "2-digit",
+            },
+          )} after the 10-minute grace period.`,
+        );
+        await logAuditEvent({
+          eventType: "warning",
+          module: "user",
+          action: "auto_clock_out",
+          description: `${user.email} was automatically clocked out after missing shift end.`,
+          actor: auditActor,
+          metadata: {
+            shift_date: entry.shift_date,
+            scheduled_shift_end: weeklyShift.shift_end_time,
+            auto_clock_out_at: autoClockOutIso,
+          },
+        });
+      } catch {
+        toast.error("Failed to record automatic clock out.");
+      }
+    }, delay);
+
+    return () => window.clearTimeout(id);
+  }, [
+    auditActor,
+    isOvertimeActive,
+    isShiftActive,
+    isShiftCompleted,
+    todayEntry?.shift_date,
+    user,
+    weeklyShift?.shift_end_time,
+  ]);
+
   const openConfirm = useCallback((type) => {
     setConfirmType(type);
     setIsConfirmOpen(true);
@@ -833,8 +1200,7 @@ export default function UserDashboard() {
                   <p className="text-orange-500 font-bold text-xs uppercase tracking-widest">
                     Scheduled shift
                   </p>
-                  {weeklyShift?.shift_start_time &&
-                  weeklyShift?.shift_end_time ? (
+                  {hasAssignedShift ? (
                     <>
                       <p className="text-gray-800 font-black text-lg">
                         {formatShiftTimeLabel(weeklyShift.shift_start_time)} –{" "}
@@ -875,10 +1241,59 @@ export default function UserDashboard() {
                     </>
                   ) : (
                     <p className="text-gray-500 text-sm font-medium">
-                      No shift is assigned for this week. You can clock in
-                      without schedule rules.
+                      No shift is assigned for this week. Clock-in stays disabled
+                      until an admin assigns your schedule.
                     </p>
                   )}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-orange-500 font-bold text-xs uppercase tracking-widest">
+                        Attendance Guide
+                      </p>
+                      <h3 className="text-lg font-black text-gray-800">
+                        How this attendance system works
+                      </h3>
+                      <p className="text-sm text-gray-500 font-medium">
+                        Follow these rules so your time-in, breaks, lunch,
+                        time-out, and overtime are recorded correctly.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsGuideOpen((open) => !open)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-orange-100 bg-orange-50 px-4 py-2 text-xs font-bold text-orange-600 hover:bg-orange-100 cursor-pointer"
+                    >
+                      {isGuideOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      {isGuideOpen ? "Hide Guide" : "Show Guide"}
+                    </button>
+                  </div>
+
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ease-out ${
+                      isGuideOpen
+                        ? "max-h-[32rem] opacity-100 mt-4"
+                        : "max-h-0 opacity-0 mt-0"
+                    }`}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                      {ATTENDANCE_GUIDE_ITEMS.map((item) => (
+                        <div
+                          key={item.title}
+                          className="rounded-2xl border border-orange-100 bg-orange-50/50 p-4"
+                        >
+                          <p className="text-sm font-black text-gray-800">
+                            {item.title}
+                          </p>
+                          <p className="mt-2 text-xs leading-5 text-gray-600 font-medium">
+                            {item.description}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Clock-In Card */}
@@ -963,6 +1378,11 @@ export default function UserDashboard() {
                         <Clock size={22} />
                         {isShiftActive ? "Clock Out" : "Clock In"}
                       </button>
+                    )}
+                    {!isShiftActive && !hasAssignedShift && (
+                      <p className="text-xs font-bold text-center md:text-right text-gray-500">
+                        Clock-in is unavailable because no weekly shift is assigned yet.
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1238,16 +1658,25 @@ export default function UserDashboard() {
                           const hasOvertimeCompleted =
                             hasOvertimeIn && hasOvertimeOut;
 
-                          const considerLate = isLate(
-                            formatTime(log?.clock_in_at), // "04:41 PM"
-                            weeklyShift?.shift_start_time, // "07:00:00"
-                            5,
+                          const { shiftStart, shiftEnd } = getEntryShiftTimes(
+                            log,
+                            weeklyShift,
                           );
+                          const formattedLogClockIn = formatTime(log?.clock_in_at);
+                          const formattedLogClockOut = formatTime(log?.clock_out_at);
+                          const considerLate =
+                            formattedLogClockIn !== "-" &&
+                            !!shiftStart &&
+                            isLate(
+                              formattedLogClockIn, // "04:41 PM"
+                              shiftStart, // "07:00 AM" or "07:00:00"
+                              5,
+                            );
 
-                          const considerUnderTime = isUnderTime(
-                            formatTime(log?.clock_out_at),
-                            weeklyShift?.shift_end_time,
-                          );
+                          const considerUnderTime =
+                            formattedLogClockOut !== "-" &&
+                            !!shiftEnd &&
+                            isUnderTime(formattedLogClockOut, shiftEnd);
 
                           const statusLabel = hasOvertimeCompleted
                             ? "Shift Completed with Overtime"
@@ -1286,7 +1715,7 @@ export default function UserDashboard() {
                                 {log.scheduled_shift}
                               </td>
                               <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.clock_in_at)}{" "}
+                                {formattedLogClockIn}{" "}
                                 {considerLate && (
                                   <span className="bg-orange-600 text-white px-2 rounded-2xl">
                                     Late
@@ -1312,7 +1741,7 @@ export default function UserDashboard() {
                                 {formatTime(log.lunch_break_out_at)}
                               </td>
                               <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.clock_out_at)}
+                                {formattedLogClockOut}
 
                                 {log.clock_out_at && considerUnderTime && (
                                   <span className="bg-orange-600 ml-1 text-white px-2 rounded-2xl">

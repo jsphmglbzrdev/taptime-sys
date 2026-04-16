@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { CalendarIcon, X } from "lucide-react";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const CUSTOM_SHIFT_VALUE = "custom";
 
 function displayEmployee(emp) {
   const name = `${emp?.first_name ?? ""} ${emp?.last_name ?? ""}`.trim();
@@ -13,6 +25,17 @@ const SHIFT_OPTIONS = [
   { value: "10:00|19:00", label: "10:00 AM - 7:00 PM" },
   { value: "11:00|20:00", label: "11:00 AM - 8:00 PM" },
 ];
+const CUSTOM_TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
+  const hours = Math.floor(index / 4);
+  const minutes = (index % 4) * 15;
+  const value = `${`${hours}`.padStart(2, "0")}:${`${minutes}`.padStart(2, "0")}`;
+  const date = new Date(2026, 0, 1, hours, minutes);
+
+  return {
+    value,
+    label: format(date, "h:mm aa"),
+  };
+});
 
 function emptyForm() {
   return {
@@ -24,6 +47,36 @@ function emptyForm() {
     shift_start_time: "",
     shift_end_time: "",
   };
+}
+
+function isPresetShift(value) {
+  return SHIFT_OPTIONS.some((option) => option.value === value);
+}
+
+function formatDateLabel(value) {
+  if (!value) return "Pick a date";
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "Pick a date";
+  return format(parsed, "PPP");
+}
+
+function normalizeTimeValue(value) {
+  if (!value) return "";
+  return value.slice(0, 5);
+}
+
+function toDateValue(value) {
+  if (!value) return undefined;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function toYmd(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default function ManageShiftModal({
@@ -60,14 +113,17 @@ export default function ManageShiftModal({
     if (!isManageShiftOpen) return;
 
     if (prefillData?.id) {
+      const shiftTemplate = `${prefillData.shift_start_time}|${prefillData.shift_end_time}`;
       setForm({
         id: prefillData.id,
         employee_auth_id: prefillData.employee_auth_id || "",
         week_start: prefillData.week_start || "",
         week_end: prefillData.week_end || "",
-        shift_template: `${prefillData.shift_start_time}|${prefillData.shift_end_time}`,
-        shift_start_time: prefillData.shift_start_time || "",
-        shift_end_time: prefillData.shift_end_time || "",
+        shift_template: isPresetShift(shiftTemplate)
+          ? shiftTemplate
+          : CUSTOM_SHIFT_VALUE,
+        shift_start_time: normalizeTimeValue(prefillData.shift_start_time),
+        shift_end_time: normalizeTimeValue(prefillData.shift_end_time),
       });
     } else {
       setForm(emptyForm());
@@ -83,6 +139,7 @@ export default function ManageShiftModal({
     !!form.shift_start_time &&
     !!form.shift_end_time &&
     !isSaving;
+  const isCustomShift = form.shift_template === CUSTOM_SHIFT_VALUE;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -115,42 +172,55 @@ export default function ManageShiftModal({
               <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
                 Employee
               </label>
-              <select
-                value={form.employee_auth_id}
+              <Select
+                value={form.employee_auth_id || undefined}
                 disabled={isEdit}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, employee_auth_id: e.target.value }))
+                onValueChange={(value) =>
+                  setForm((p) => ({ ...p, employee_auth_id: value }))
                 }
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:bg-gray-100 disabled:text-gray-500"
               >
-                <option value="">Select employee...</option>
-                {(isEdit ? employeeOptions : selectableEmployees).map((emp) => (
-                  <option key={emp.auth_id} value={emp.auth_id}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select employee..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {(isEdit ? employeeOptions : selectableEmployees).map((emp) => (
+                    <SelectItem key={emp.auth_id} value={emp.auth_id}>
                     {displayEmployee(emp)}
-                  </option>
-                ))}
-              </select>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1">
               <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
                 Week start
               </label>
-              <input
-                type="date"
-                value={form.week_start}
-                onChange={(e) => {
-                  const startDate = e.target.value;
-
-                  
-
-                  setForm((p) => ({
-                    ...p,
-                    week_start: startDate
-                  }));
-                }}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-12 w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-sm font-bold text-gray-700 shadow-sm transition hover:border-orange-200 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  >
+                    <span className={form.week_start ? "text-gray-700" : "text-gray-400"}>
+                      {formatDateLabel(form.week_start)}
+                    </span>
+                    <CalendarIcon className="h-4 w-4 text-gray-500" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={toDateValue(form.week_start)}
+                    onSelect={(date) =>
+                      setForm((p) => ({
+                        ...p,
+                        week_start: toYmd(date),
+                      }))
+                    }
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -159,45 +229,128 @@ export default function ManageShiftModal({
               <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
                 Week end
               </label>
-              <input
-                type="date"
-                value={form.week_end}
-                onChange={(e) => {
-                  setForm((p) => ({
-                    ...p,
-                    week_end: e.target.value
-                  }));
-                }}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-100 text-gray-500 font-bold"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-12 w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-sm font-bold text-gray-700 shadow-sm transition hover:border-orange-200 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  >
+                    <span className={form.week_end ? "text-gray-700" : "text-gray-400"}>
+                      {formatDateLabel(form.week_end)}
+                    </span>
+                    <CalendarIcon className="h-4 w-4 text-gray-500" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={toDateValue(form.week_end)}
+                    onSelect={(date) =>
+                      setForm((p) => ({
+                        ...p,
+                        week_end: toYmd(date),
+                      }))
+                    }
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-1">
               <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
                 Time shift
               </label>
-              <select
-                value={form.shift_template}
-                onChange={(e) => {
-                  const [shiftStart, shiftEnd] = e.target.value.split("|");
+              <Select
+                value={form.shift_template || undefined}
+                onValueChange={(value) => {
+                  if (value === CUSTOM_SHIFT_VALUE) {
+                    setForm((p) => ({
+                      ...p,
+                      shift_template: CUSTOM_SHIFT_VALUE,
+                    }));
+                    return;
+                  }
+                  const [shiftStart, shiftEnd] = value.split("|");
                   setForm((p) => ({
                     ...p,
-                    shift_template: e.target.value,
+                    shift_template: value,
                     shift_start_time: shiftStart || "",
                     shift_end_time: shiftEnd || "",
                   }));
                 }}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-orange-200"
               >
-                <option value="">Select time shift...</option>
-                {SHIFT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select time shift..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHIFT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM_SHIFT_VALUE}>
+                    Customize Time Shift
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+
+          {isCustomShift && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
+                  Custom shift start
+                </label>
+                <Select
+                  value={form.shift_start_time || undefined}
+                  onValueChange={(value) =>
+                    setForm((p) => ({
+                      ...p,
+                      shift_start_time: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select start time..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CUSTOM_TIME_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-black text-gray-600 uppercase tracking-wider">
+                  Custom shift end
+                </label>
+                <Select
+                  value={form.shift_end_time || undefined}
+                  onValueChange={(value) =>
+                    setForm((p) => ({
+                      ...p,
+                      shift_end_time: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select end time..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CUSTOM_TIME_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-5 border-t border-slate-100 flex items-center justify-end gap-3">

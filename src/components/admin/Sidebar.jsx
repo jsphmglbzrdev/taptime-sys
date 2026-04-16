@@ -7,7 +7,7 @@ import {
   X,
   User2,
   Timer,
-  TruckElectricIcon,
+  ScrollText,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLoading } from "../../context/LoadingContext";
@@ -31,6 +31,7 @@ export default function Sidebar({
     { id: "Overview", icon: <LayoutDashboard size={20} />, label: "Overview" },
     { id: "Employees", icon: <Users size={20} />, label: "Employees" },
     { id: "Manage Shift", icon: <Timer size={20} />, label: "Manage Shift" },
+    { id: "Audit Trail", icon: <ScrollText size={20} />, label: "Audit Trail" },
     { id: "My Account", icon: <User2 size={20} />, label: "My Account" },
   ];
 

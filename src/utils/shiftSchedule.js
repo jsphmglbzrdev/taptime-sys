@@ -2,6 +2,8 @@
 export const CLOCK_IN_EARLY_MS = 60 * 60 * 1000;
 /** After shift start, this many minutes still count as “within grace” (not flagged late) */
 export const LATE_GRACE_MS = 5 * 60 * 1000;
+/** After scheduled shift end, automatically clock out after this long. */
+export const AUTO_CLOCK_OUT_GRACE_MS = 10 * 60 * 1000;
 
 export function normalizeTimeString(timeStr) {
   if (timeStr == null || timeStr === "") return null;
@@ -43,6 +45,16 @@ export function getClockInWindow(shiftDate, shiftStartTime, shiftEndTime) {
     graceEnds: new Date(shiftStart.getTime() + LATE_GRACE_MS),
     latestClockIn: shiftEnd,
   };
+}
+
+export function getAutoClockOutDeadline(
+  shiftDate,
+  shiftEndTime,
+  graceMs = AUTO_CLOCK_OUT_GRACE_MS,
+) {
+  const shiftEnd = localDateTimeFromShiftDateAndTime(shiftDate, shiftEndTime);
+  if (!shiftEnd) return null;
+  return new Date(shiftEnd.getTime() + graceMs);
 }
 
 /**
@@ -91,6 +103,27 @@ export function formatShiftTimeLabel(timeStr) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+export function parseShiftRangeLabel(shiftLabel) {
+  if (!shiftLabel || typeof shiftLabel !== "string") {
+    return { shiftStart: "", shiftEnd: "" };
+  }
+
+  const [shiftStart = "", shiftEnd = ""] = shiftLabel
+    .split(/\s*-\s*/)
+    .map((value) => value.trim());
+
+  return { shiftStart, shiftEnd };
+}
+
+export function getEntryShiftTimes(entry, fallbackWeeklyShift = null) {
+  const { shiftStart, shiftEnd } = parseShiftRangeLabel(entry?.scheduled_shift);
+
+  return {
+    shiftStart: shiftStart || fallbackWeeklyShift?.shift_start_time || "",
+    shiftEnd: shiftEnd || fallbackWeeklyShift?.shift_end_time || "",
+  };
+}
+
 export const parseTimeToMinutes = (time) => {
   // Handle invalid/empty inputs
   if (!time || time === "-" || typeof time !== "string") return 0;
@@ -134,13 +167,13 @@ export function formatDayRange(week_start, week_end) {
   if (!week_start || !week_end) return "";
 
   const days = [
-    "Sunday" && "Sun",
-    "Monday" && "Mon",
-    "Tuesday" && "Tues",
-    "Wednesday" && "Wed",
-    "Thursday" && "Thurs",
-    "Friday" && "Fri",
-    "Saturday" && "Sat",
+    "Sun",
+    "Mon",
+    "Tues",
+    "Wed",
+    "Thurs",
+    "Fri",
+    "Sat",
   ];
 
   const startDate = new Date(week_start);

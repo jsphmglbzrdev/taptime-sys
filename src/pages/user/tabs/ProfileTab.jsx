@@ -14,6 +14,7 @@ import AvatarEditorModal from "../../../components/AvatarEditorModal";
 import AvatarViewerModal from "../../../components/AvatarViewerModal";
 import ConfirmationBox from "../../../components/ConfirmationBox";
 import { supabase } from "../../../utils/supabase";
+import { logAuditEvent } from "../../../utils/auditTrail";
 
 function getInitials(profile) {
   const first = profile?.first_name?.trim();
@@ -107,6 +108,18 @@ export default function ProfileTab() {
         setIsAvatarEditorOpen(false);
         setAvatarDraftFile(null);
         toast.success("Profile picture updated.");
+        await logAuditEvent({
+          eventType: "info",
+          module: "user",
+          action: "update_profile_avatar",
+          description: `Updated profile picture for ${profile?.email ?? user?.email}.`,
+          actor: {
+            auth_id: user?.id,
+            email: profile?.email ?? user?.email,
+            name: displayName,
+            role: profile?.role ?? "Employee",
+          },
+        });
         await loadProfile();
       } catch (err) {
         toast.error(
@@ -132,6 +145,18 @@ export default function ProfileTab() {
       setAvatarSrc("");
       setIsAvatarViewerOpen(false);
       toast.success("Profile picture removed.");
+      await logAuditEvent({
+        eventType: "warning",
+        module: "user",
+        action: "delete_profile_avatar",
+        description: `Removed profile picture for ${profile?.email ?? user?.email}.`,
+        actor: {
+          auth_id: user?.id,
+          email: profile?.email ?? user?.email,
+          name: displayName,
+          role: profile?.role ?? "Employee",
+        },
+      });
       await loadProfile();
     } catch (err) {
       toast.error(err?.message ?? "Failed to remove profile picture.");
@@ -165,6 +190,18 @@ export default function ProfileTab() {
         const res = await supabase.auth.updateUser({ password: a });
         if (res.error) throw res.error;
         toast.success("Password updated.");
+        await logAuditEvent({
+          eventType: "info",
+          module: "user",
+          action: "update_password",
+          description: `Updated password for ${profile?.email ?? user?.email}.`,
+          actor: {
+            auth_id: user?.id,
+            email: profile?.email ?? user?.email,
+            name: displayName,
+            role: profile?.role ?? "Employee",
+          },
+        });
         setPw("");
         setPw2("");
       } catch (err) {

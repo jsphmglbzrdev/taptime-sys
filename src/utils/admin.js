@@ -137,6 +137,61 @@ export const listTimeEntriesByShiftDate = async ({ shift_date }) => {
   }
 };
 
+export const listAuditTrail = async () => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("audit_trails")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+    return { success: true, data: data ?? [] };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const listAuditTrailPage = async ({ page = 1, pageSize = 20 } = {}) => {
+  try {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 20));
+    const from = (safePage - 1) * safePageSize;
+    const to = from + safePageSize - 1;
+
+    const { data, error, count } = await supabaseAdmin
+      .from("audit_trails")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    return {
+      success: true,
+      data: data ?? [],
+      count: count ?? 0,
+      page: safePage,
+      pageSize: safePageSize,
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const clearAuditTrail = async () => {
+  try {
+    const { error } = await supabaseAdmin
+      .from("audit_trails")
+      .delete()
+      .not("id", "is", null);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
 export const autoEndExpiredBreaksByShiftDate = async ({ shift_date }) => {
   try {
     if (!shift_date) throw new Error("shift_date is required");

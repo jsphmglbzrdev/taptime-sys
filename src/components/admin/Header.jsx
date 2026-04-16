@@ -3,6 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { getCurrentUser } from "../../utils/auth";
 import { AVATAR_UPDATED_EVENT, resolveAvatarSrc } from "../../utils/avatar";
+import NotificationBell from "../NotificationBell";
 
 export default function Header({ setIsSidebarOpen, activeTab }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -75,6 +76,7 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
       </div>
 
       <div className="flex items-center gap-4">
+        <NotificationBell />
         <div className="hidden md:block text-right">
           <p className="text-sm font-bold text-gray-800 leading-none">
             {currentUser?.first_name} {currentUser?.last_name}

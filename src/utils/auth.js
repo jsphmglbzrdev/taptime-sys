@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { createClient } from "@supabase/supabase-js";
+import { logAuditEvent } from "./auditTrail";
 
 const supabaseAdmin = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -18,12 +19,23 @@ const supabaseAdmin = createClient(
 
 // Sign in function that authenticates user and fetches their account data
 export const signIn = async (username, password) => {
+  const normalizedEmail = String(username ?? "").trim().toLowerCase();
+  const safePassword = String(password ?? "");
+
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: username,
-    password: password,
+    email: normalizedEmail,
+    password: safePassword,
   });
 
   if (error) {
+    await logAuditEvent({
+      eventType: "warning",
+      module: "auth",
+      action: "login_failed",
+      description: `Failed login attempt for ${normalizedEmail || "unknown email"}.`,
+      actor: { email: normalizedEmail || null },
+      metadata: { reason: error.message },
+    });
     return { success: false, error: error.message };
   }
 
@@ -46,6 +58,19 @@ export const signIn = async (username, password) => {
     return { success: false, error: 'User account not found' };
   }
 
+  await logAuditEvent({
+    eventType: "info",
+    module: "auth",
+    action: "login_success",
+      description: `${userAccount.email} signed in.`,
+      actor: {
+        auth_id: userId,
+        email: userAccount.email,
+      name: `${userAccount.first_name ?? ""} ${userAccount.last_name ?? ""}`.trim(),
+      role: userAccount.role,
+    },
+  });
+
   return {
     success: true,
     user: data.user,
@@ -56,7 +81,14 @@ export const signIn = async (username, password) => {
 // Account creation
 
 
-export const createUser = async ({ first_name, last_name, email, password, role }) => {
+export const createUser = async ({
+  first_name,
+  last_name,
+  email,
+  password,
+  role,
+  auditContext,
+}) => {
   try {
     const safeEmail = (email ?? "").trim();
     const safePassword = password ?? "";
@@ -92,6 +124,20 @@ export const createUser = async ({ first_name, last_name, email, password, role 
       ]);
     if (profileError) throw profileError;
 
+    await logAuditEvent({
+      eventType: "info",
+      module: "admin",
+      action: "create_user",
+      description: `Created ${role || "Employee"} account for ${safeEmail}.`,
+      actor: auditContext?.actor,
+      target: {
+        auth_id: authUserId,
+        email: safeEmail,
+        name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
+      },
+      metadata: { role: role || "Employee" },
+    });
+
     return { success: true, user: data?.user ?? data };
   } catch (error) {
     return { success: false, error: error.message };
@@ -108,9 +154,35 @@ export const getCurrentUser = async (id) => {
 
 // Sign out
 export const signOut = async () => {	
+  const { data: currentUserData } = await supabase.auth.getUser();
+  const currentUser = currentUserData?.user ?? null;
+
+  let actor = null;
+  if (currentUser?.id) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("auth_id, first_name, last_name, email, role")
+      .eq("auth_id", currentUser.id)
+      .maybeSingle();
+
+    actor = {
+      auth_id: profile?.auth_id ?? currentUser.id,
+      email: profile?.email ?? currentUser.email ?? null,
+      name: `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim(),
+      role: profile?.role ?? null,
+    };
+  }
+
 	const { error } = await supabase.auth.signOut();
 	if (error) {
 		return { success: false, error: error.message };
 	}
+  await logAuditEvent({
+    eventType: "info",
+    module: "auth",
+    action: "logout",
+    description: `${actor?.email ?? "User"} signed out.`,
+    actor,
+  });
 	return { success: true };
 }

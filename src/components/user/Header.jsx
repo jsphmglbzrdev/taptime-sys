@@ -3,6 +3,7 @@ import { Menu } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { getCurrentUser } from "../../utils/auth";
 import { AVATAR_UPDATED_EVENT, resolveAvatarSrc } from "../../utils/avatar";
+import NotificationBell from "../NotificationBell";
 
 const Header = ({ setIsSidebarOpen }) => {
   const { user } = useAuth();
@@ -74,6 +75,7 @@ const Header = ({ setIsSidebarOpen }) => {
       </div>
 
       <div className="flex items-center gap-4">
+        <NotificationBell />
         <div className="hidden md:block text-right">
           <p className="text-sm font-bold text-gray-800 leading-none">
             {displayName}

@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { History, Plus } from "lucide-react";
+import { History, Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
+import ConfirmationBox from "../../../components/ConfirmationBox";
 import { supabase } from "../../../utils/supabase";
+import { useAuth } from "../../../context/AuthContext";
+import { logAuditEvent } from "../../../utils/auditTrail";
 import ManageShiftModal from "../../../components/admin/ManageShiftModal";
 import ShiftHistoryModal from "../../../components/admin/ShiftHistoryModal";
 import {
@@ -33,10 +36,14 @@ function pickLatestShiftPerEmployee(rows) {
 }
 
 export default function ManageShift() {
+  const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [shiftRows, setShiftRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pendingDeleteRow, setPendingDeleteRow] = useState(null);
 
   const [isManageShiftOpen, setIsManageShiftOpen] = useState(false);
   const [prefillShift, setPrefillShift] = useState(null);
@@ -129,24 +136,24 @@ export default function ManageShift() {
       setIsSaving(true);
       try {
         const safePayload = {
-          shift_created_at: payload.created_at,
           employee_auth_id: payload.employee_auth_id,
           week_start: payload.week_start,
           week_end: payload.week_end,
           shift_start_time: payload.shift_start_time,
           shift_end_time: payload.shift_end_time,
         };
+        const currentRes = await supabase
+          .from("employee_weekly_shifts")
+          .select("*")
+          .eq("employee_auth_id", safePayload.employee_auth_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (currentRes.error) throw currentRes.error;
 
-        if (payload.id) {
-          const existingRes = await supabase
-            .from("employee_weekly_shifts")
-            .select("*")
-            .eq("id", payload.id)
-            .maybeSingle();
-          if (existingRes.error) throw existingRes.error;
-          if (!existingRes.data) throw new Error("Shift not found.");
+        const prev = currentRes.data ?? null;
 
-          const prev = existingRes.data;
+        if (prev) {
           const sameStart =
             normalizeTimeString(prev.shift_start_time) ===
             normalizeTimeString(safePayload.shift_start_time);
@@ -176,25 +183,56 @@ export default function ManageShift() {
 
           const updateRes = await supabase
             .from("employee_weekly_shifts")
-            .update(safePayload)
-            .eq("id", payload.id);
+            .update(
+              hasChanges
+                ? { ...safePayload, created_at: new Date().toISOString() }
+                : safePayload,
+            )
+            .eq("id", prev.id);
           if (updateRes.error) throw updateRes.error;
+
+          const targetEmployee = employeesById.get(safePayload.employee_auth_id);
+          await logAuditEvent({
+            eventType: "info",
+            module: "admin",
+            action: "update_weekly_shift",
+            description: `Updated weekly shift for ${targetEmployee?.email ?? safePayload.employee_auth_id}.`,
+            actor: {
+              auth_id: user?.id,
+              email: user?.email,
+              role: "Admin",
+            },
+            target: {
+              auth_id: safePayload.employee_auth_id,
+              email: targetEmployee?.email,
+              name: formatEmployeeName(targetEmployee),
+            },
+            metadata: safePayload,
+          });
         } else {
-          const dupRes = await supabase
-            .from("employee_weekly_shifts")
-            .select("id")
-            .eq("employee_auth_id", safePayload.employee_auth_id)
-            .limit(1);
-          if (dupRes.error) throw dupRes.error;
-          if (dupRes.data?.length) {
-            throw new Error(
-              "This employee already has a shift. Use Edit to update it.",
-            );
-          }
           const insertRes = await supabase
             .from("employee_weekly_shifts")
             .insert(safePayload);
           if (insertRes.error) throw insertRes.error;
+
+          const targetEmployee = employeesById.get(safePayload.employee_auth_id);
+          await logAuditEvent({
+            eventType: "info",
+            module: "admin",
+            action: "create_weekly_shift",
+            description: `Created weekly shift for ${targetEmployee?.email ?? safePayload.employee_auth_id}.`,
+            actor: {
+              auth_id: user?.id,
+              email: user?.email,
+              role: "Admin",
+            },
+            target: {
+              auth_id: safePayload.employee_auth_id,
+              email: targetEmployee?.email,
+              name: formatEmployeeName(targetEmployee),
+            },
+            metadata: safePayload,
+          });
         }
 
         toast.success("Weekly shift saved.");
@@ -207,7 +245,79 @@ export default function ManageShift() {
         setIsSaving(false);
       }
     },
-    [loadWeeklyShifts],
+    [employeesById, loadWeeklyShifts, user?.email, user?.id],
+  );
+
+  const requestDelete = useCallback((row) => {
+    if (!row?.id) return;
+    setPendingDeleteRow(row);
+    setDeleteConfirmOpen(true);
+  }, []);
+
+  const handleDelete = useCallback(
+    async () => {
+      const row = pendingDeleteRow;
+      if (!row?.id) return;
+      setDeleteConfirmOpen(false);
+      setDeletingId(row.id);
+      try {
+        const historyRes = await supabase
+          .from("employee_weekly_shift_history")
+          .insert({
+            shift_created_at: row.created_at,
+            employee_auth_id: row.employee_auth_id,
+            week_start: row.week_start,
+            week_end: row.week_end,
+            shift_start_time: row.shift_start_time,
+            shift_end_time: row.shift_end_time,
+          });
+        if (historyRes.error) throw historyRes.error;
+
+        const deleteRes = await supabase
+          .from("employee_weekly_shifts")
+          .delete()
+          .eq("id", row.id);
+        if (deleteRes.error) throw deleteRes.error;
+
+        if (prefillShift?.id === row.id) {
+          setIsManageShiftOpen(false);
+          setPrefillShift(null);
+        }
+
+        const targetEmployee = employeesById.get(row.employee_auth_id);
+        await logAuditEvent({
+          eventType: "warning",
+          module: "admin",
+          action: "delete_weekly_shift",
+          description: `Deleted weekly shift for ${targetEmployee?.email ?? row.employee_auth_id}.`,
+          actor: {
+            auth_id: user?.id,
+            email: user?.email,
+            role: "Admin",
+          },
+          target: {
+            auth_id: row.employee_auth_id,
+            email: targetEmployee?.email,
+            name: formatEmployeeName(targetEmployee),
+          },
+          metadata: {
+            week_start: row.week_start,
+            week_end: row.week_end,
+            shift_start_time: row.shift_start_time,
+            shift_end_time: row.shift_end_time,
+          },
+        });
+
+        toast.success("Weekly shift deleted.");
+        setPendingDeleteRow(null);
+        await loadWeeklyShifts();
+      } catch (err) {
+        toast.error(err?.message || "Failed to delete shift.");
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [employeesById, loadWeeklyShifts, pendingDeleteRow, prefillShift?.id, user?.email, user?.id],
   );
 
   return (
@@ -309,6 +419,15 @@ export default function ManageShift() {
                             <History size={14} aria-hidden />
                             History
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => requestDelete(r)}
+                            disabled={deletingId === r.id}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-red-500 hover:text-red-600 hover:underline disabled:opacity-60"
+                          >
+                            <Trash2 size={14} aria-hidden />
+                            {deletingId === r.id ? "Deleting..." : "Delete"}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -351,6 +470,22 @@ export default function ManageShift() {
         }}
         employeeAuthId={historyTarget?.authId ?? ""}
         employeeLabel={historyTarget?.label ?? ""}
+      />
+
+      <ConfirmationBox
+        isModalOpen={deleteConfirmOpen}
+        setIsModalOpen={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setPendingDeleteRow(null);
+        }}
+        title="Delete weekly shift?"
+        description={`This will remove the active schedule for ${formatEmployeeName(
+          pendingDeleteRow
+            ? employeesById.get(pendingDeleteRow.employee_auth_id)
+            : null,
+        )}. The current shift details will still be saved in history.`}
+        buttonText="Delete shift"
+        handleAction={handleDelete}
       />
     </div>
   );

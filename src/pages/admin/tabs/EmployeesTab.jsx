@@ -22,6 +22,7 @@ import {
   saveAvatarForUser,
   validateAvatarFile,
 } from "../../../utils/avatar";
+import { logAuditEvent } from "../../../utils/auditTrail";
 
 function EmployeesTab() {
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -102,7 +103,7 @@ function EmployeesTab() {
   const handleSave = useCallback(
     async ({ auth_id, first_name, last_name, password }) => {
       setLoading(true);
-      try {
+      try { 
         const res = await updateUserAccount({
           auth_id,
           first_name,
@@ -114,6 +115,23 @@ function EmployeesTab() {
           return;
         }
         toast.success("Account updated");
+        await logAuditEvent({
+          eventType: "info",
+          module: "admin",
+          action: "update_user",
+          description: `Updated employee account for ${selected?.email ?? auth_id}.`,
+          actor: {
+            auth_id: user?.id,
+            email: user?.email,
+            role: "Admin",
+          },
+          target: {
+            auth_id,
+            email: selected?.email ?? null,
+            name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
+          },
+          metadata: { password_changed: Boolean(password?.trim()) },
+        });
         setIsEditOpen(false);
         setSelected(null);
         await loadEmployees();
@@ -163,6 +181,22 @@ function EmployeesTab() {
         setIsAvatarEditorOpen(false);
         setAvatarDraftFile(null);
         toast.success("Profile picture updated.");
+        await logAuditEvent({
+          eventType: "info",
+          module: "admin",
+          action: "update_employee_avatar",
+          description: `Updated profile picture for ${selected?.email ?? selected?.auth_id}.`,
+          actor: {
+            auth_id: user?.id,
+            email: user?.email,
+            role: "Admin",
+          },
+          target: {
+            auth_id: selected?.auth_id,
+            email: selected?.email,
+            name: `${selected?.first_name ?? ""} ${selected?.last_name ?? ""}`.trim(),
+          },
+        });
         const nextEmployees = await loadEmployees();
         refreshSelected(selected.auth_id, nextEmployees);
       } catch (err) {
@@ -196,6 +230,22 @@ function EmployeesTab() {
       });
       setIsAvatarViewerOpen(false);
       toast.success("Profile picture removed.");
+      await logAuditEvent({
+        eventType: "warning",
+        module: "admin",
+        action: "delete_employee_avatar",
+        description: `Removed profile picture for ${selected?.email ?? selected?.auth_id}.`,
+        actor: {
+          auth_id: user?.id,
+          email: user?.email,
+          role: "Admin",
+        },
+        target: {
+          auth_id: selected?.auth_id,
+          email: selected?.email,
+          name: `${selected?.first_name ?? ""} ${selected?.last_name ?? ""}`.trim(),
+        },
+      });
       const nextEmployees = await loadEmployees();
       refreshSelected(selected.auth_id, nextEmployees);
     } catch (err) {
@@ -227,6 +277,22 @@ function EmployeesTab() {
           return;
         }
         toast.success("Account deleted");
+        await logAuditEvent({
+          eventType: "warning",
+          module: "admin",
+          action: "delete_user",
+          description: `Deleted employee account for ${emp.email ?? emp.auth_id}.`,
+          actor: {
+            auth_id: user?.id,
+            email: user?.email,
+            role: "Admin",
+          },
+          target: {
+            auth_id: emp.auth_id,
+            email: emp.email,
+            name: `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim(),
+          },
+        });
         setIsDeleteOpen(false);
         setSelected(null);
         await loadEmployees();
