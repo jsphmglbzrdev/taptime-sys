@@ -51,17 +51,17 @@ export default function LoginForm({ onLogin }) {
   };
 
   return (
-    <div>
+    <div className="w-full flex justify-center">
       {/* Decorative Background Elements */}
 
-      <div className="w-96 bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all">
-        <div className="p-8">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all mx-auto">
+        <div className="p-6 sm:p-8">
           <div className="text-center mb-10">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
               <img src={logo} alt="" />
             </div>
-            <h2 className="text-3xl font-bold text-gray-800">Welcome Back</h2>
-            <p className="text-gray-500 mt-2">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Welcome Back</h2>
+            <p className="text-gray-500 mt-2 text-sm sm:base">
               Please enter your details to sign in
             </p>
           </div>
@@ -122,14 +122,14 @@ export default function LoginForm({ onLogin }) {
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`w-full flex cursor-pointer justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all transform active:scale-[0.98] }`}
+              className={`w-full flex cursor-pointer justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-orange-500 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all transform active:scale-[0.98]`}
             >
               {isSubmitting ? "Signing In..." : "Sign In"}
             </button>
           </form>
         </div>
 
-        <div className="bg-orange-50 py-4 px-8 text-center">
+        <div className="bg-orange-50 py-4 px-6 sm:px-8 text-center">
           <p className="text-xs text-orange-800 font-medium">
             Internal System Access Only
           </p>

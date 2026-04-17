@@ -72,15 +72,11 @@ export default function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-40 md:absolute md:inset-auto md:right-0 md:top-auto md:mt-3 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:rounded-2xl md:border md:border-gray-200 md:shadow-2xl flex items-end md:block md:bg-white rounded-b-2xl md:rounded-2xl">
-          {/* Mobile overlay background */}
-          <div 
-            className="md:hidden fixed inset-0 bg-black/20 backdrop-blur-sm -z-10" 
-            onClick={() => setIsOpen(false)}
-          />
+        <div className="fixed right-0 bottom-0 z-40 md:absolute md:right-0 md:top-12 sm:w-96 md:w-[22rem] md:rounded-2xl md:border md:border-gray-200 md:shadow-2xl flex items-end md:block md:bg-white">
+  
           
           {/* Notification content */}
-          <div className="w-full md:w-auto md:max-w-[22rem] bg-white rounded-t-2xl md:rounded-2xl max-h-[90vh] md:max-h-96 overflow-hidden">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl max-h-[90vh] md:max-h-96 overflow-hidden sm:w-96 md:w-[22rem]">
             <div className="border-b border-gray-100 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -138,7 +134,7 @@ export default function NotificationBell() {
             </div>
             </div>
 
-            <div className="max-h-96 md:max-h-80 overflow-y-auto">
+            <div className="max-h-[calc(90vh-200px)] md:max-h-80 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="px-4 py-6 text-sm font-medium text-gray-500">
                   No notifications yet.
