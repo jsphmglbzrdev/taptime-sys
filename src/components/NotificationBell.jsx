@@ -72,12 +72,9 @@ export default function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="fixed right-0 bottom-0 z-40 md:absolute md:right-0 md:top-12 sm:w-96 md:w-[22rem] md:rounded-2xl md:border md:border-gray-200 md:shadow-2xl flex items-end md:block md:bg-white">
-  
-          
-          {/* Notification content */}
-          <div className="bg-white rounded-t-2xl md:rounded-2xl max-h-[90vh] md:max-h-96 overflow-hidden sm:w-96 md:w-[22rem]">
-            <div className="border-b border-gray-100 px-4 py-3">
+        <div className="absolute right-[-4.5rem] md:right-0 top-12 z-50 w-[calc(100vw-2rem)] sm:w-80 md:w-[22rem] bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden">
+          <div className="flex flex-col max-h-[80vh] md:max-h-96">
+            <div className="border-b border-gray-100 px-4 py-3 shrink-0 bg-white">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-black text-gray-800">Notifications</p>
@@ -88,53 +85,53 @@ export default function NotificationBell() {
                 <span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-black text-orange-600">
                   {unreadCount} unread
                 </span>
-                </div>
+              </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
-              {canRequestPermission && (
-                <button
-                  type="button"
-                  onClick={() => requestNotificationPermission()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-[11px] font-bold text-orange-600 hover:bg-orange-100 cursor-pointer"
-                >
-                  <Smartphone size={14} />
-                  {permissionLabel}
-                </button>
-              )}
-              {isInstallAvailable && (
-                <button
-                  type="button"
-                  onClick={() => installApp()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
-                >
-                  <Download size={14} />
-                  Install App
-                </button>
-              )}
-              {notifications.length > 0 && (
-                <>
+                {canRequestPermission && (
                   <button
                     type="button"
-                    onClick={markAllRead}
-                    className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    onClick={() => requestNotificationPermission()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-[11px] font-bold text-orange-600 hover:bg-orange-100 cursor-pointer"
                   >
-                    <CheckCheck size={14} />
-                    Mark All Read
+                    <Smartphone size={14} />
+                    {permissionLabel}
                   </button>
+                )}
+                {isInstallAvailable && (
                   <button
                     type="button"
-                    onClick={clearNotifications}
+                    onClick={() => installApp()}
                     className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
                   >
-                    <Trash2 size={14} />
-                    Clear
+                    <Download size={14} />
+                    Install App
                   </button>
-                </>
-              )}
-            </div>
+                )}
+                {notifications.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={markAllRead}
+                      className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <CheckCheck size={14} />
+                      Mark All Read
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearNotifications}
+                      className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <Trash2 size={14} />
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="max-h-[calc(90vh-200px)] md:max-h-80 overflow-y-auto">
+            <div className="overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="px-4 py-6 text-sm font-medium text-gray-500">
                   No notifications yet.
