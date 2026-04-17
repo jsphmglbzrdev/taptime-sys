@@ -272,7 +272,7 @@ export function AppShellProvider({ children }) {
         read: true,
       })),
     );
-  }, []);
+  }, [notifications]);
 
   const markAsRead = useCallback((id) => {
     setReadIds((current) =>

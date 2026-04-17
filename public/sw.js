@@ -1,5 +1,9 @@
 const CACHE_NAME = "taptime-shell-v1";
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest", "/logo.png"];
+const NETWORK_FIRST_PATTERNS = [
+  "/api/",
+  ".supabase.co", // Supabase API requests
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -24,6 +28,27 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
+  // Network-first strategy for API requests and Supabase calls
+  const isNetworkFirst = NETWORK_FIRST_PATTERNS.some((pattern) =>
+    event.request.url.includes(pattern),
+  );
+
+  if (isNetworkFirst) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
+
+  // Cache-first strategy for static assets
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
@@ -32,8 +57,7 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (
             !response ||
-            response.status !== 200 ||
-            event.request.url.includes("/api/")
+            response.status !== 200
           ) {
             return response;
           }

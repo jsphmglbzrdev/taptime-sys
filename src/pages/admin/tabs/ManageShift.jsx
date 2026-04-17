@@ -107,6 +107,29 @@ export default function ManageShift() {
     loadWeeklyShifts();
   }, [loadEmployees, loadWeeklyShifts]);
 
+  // Real-time subscription to shift updates
+  useEffect(() => {
+    const shiftChannel = supabase
+      .channel("manage-shift-updates")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "employee_weekly_shifts",
+        },
+        async () => {
+          // Reload shifts whenever there's any change (insert, update, delete)
+          await loadWeeklyShifts();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, [loadWeeklyShifts]);
+
   const employeeAuthIdsWithShift = useMemo(
     () =>
       pickLatestShiftPerEmployee(shiftRows)

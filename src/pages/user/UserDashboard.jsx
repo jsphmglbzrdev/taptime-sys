@@ -231,27 +231,38 @@ export default function UserDashboard() {
 
       if (notify && shiftNotificationSnapshotRef.current !== nextShiftSnapshot) {
         if (!shiftNotificationSnapshotRef.current && nextShiftSnapshot) {
-          await addNotification({
-            dedupeKey: `user-shift-snapshot-insert-${user.id}-${nextShiftSnapshot}`,
-            kind: "shift",
-            title: "Shift assigned",
-            message: `Your weekly shift is now ${shiftRow.week_start} to ${shiftRow.week_end}.`,
-          });
+          const insertPayload = {
+            eventType: "INSERT",
+            new: shiftRow,
+            commit_timestamp: new Date().toISOString(),
+          };
+          const nextNotification = buildUserShiftNotification(insertPayload);
+          if (nextNotification) {
+            await addNotification(nextNotification);
+          }
         } else if (shiftNotificationSnapshotRef.current && nextShiftSnapshot) {
-          await addNotification({
-            dedupeKey: `user-shift-snapshot-update-${user.id}-${nextShiftSnapshot}`,
-            kind: "shift",
-            title: "Shift updated",
-            message: `Your assigned shift was changed to ${shiftRow.week_start} through ${shiftRow.week_end}.`,
-          });
+          const prevShift = JSON.parse(shiftNotificationSnapshotRef.current);
+          const updatePayload = {
+            eventType: "UPDATE",
+            old: prevShift,
+            new: shiftRow,
+            commit_timestamp: new Date().toISOString(),
+          };
+          const nextNotification = buildUserShiftNotification(updatePayload);
+          if (nextNotification) {
+            await addNotification(nextNotification);
+          }
         } else if (shiftNotificationSnapshotRef.current && !nextShiftSnapshot) {
-          await addNotification({
-            dedupeKey: `user-shift-snapshot-delete-${user.id}`,
-            kind: "shift",
-            title: "Shift removed",
-            message:
-              "Your assigned weekly shift was removed. Please contact your admin for the updated schedule.",
-          });
+          const prevShift = JSON.parse(shiftNotificationSnapshotRef.current);
+          const deletePayload = {
+            eventType: "DELETE",
+            old: prevShift,
+            commit_timestamp: new Date().toISOString(),
+          };
+          const nextNotification = buildUserShiftNotification(deletePayload);
+          if (nextNotification) {
+            await addNotification(nextNotification);
+          }
         }
       }
 
@@ -296,6 +307,18 @@ export default function UserDashboard() {
         },
         async (payload) => {
           const nextRow = payload?.new ?? null;
+
+          // Extract old data from snapshot BEFORE updating it
+          let oldData = null;
+          if (profileNotificationSnapshotRef.current) {
+            try {
+              oldData = JSON.parse(profileNotificationSnapshotRef.current);
+            } catch {
+              oldData = null;
+            }
+          }
+
+          // Update snapshot with new data
           profileNotificationSnapshotRef.current = nextRow
             ? JSON.stringify({
                 first_name: nextRow.first_name ?? "",
@@ -305,8 +328,17 @@ export default function UserDashboard() {
                 avatar_url: nextRow.avatar_url ?? "",
               })
             : profileNotificationSnapshotRef.current;
+
           emitAvatarUpdated();
-          const nextNotification = buildUserAccountNotification(payload);
+
+          // Build proper payload for notification
+          const notificationPayload = {
+            eventType: "UPDATE",
+            old: oldData,
+            new: nextRow,
+            commit_timestamp: new Date().toISOString(),
+          };
+          const nextNotification = buildUserAccountNotification(notificationPayload);
           if (nextNotification) {
             await addNotification(nextNotification);
           }
@@ -322,6 +354,19 @@ export default function UserDashboard() {
         },
         async (payload) => {
           const nextRow = payload?.new ?? null;
+          const eventType = payload?.eventType?.toUpperCase() || payload?.event?.toUpperCase();
+
+          // For UPDATE and DELETE, extract old data from snapshot BEFORE updating it
+          let oldData = null;
+          if ((eventType === "UPDATE" || eventType === "DELETE") && shiftNotificationSnapshotRef.current) {
+            try {
+              oldData = JSON.parse(shiftNotificationSnapshotRef.current);
+            } catch {
+              oldData = null;
+            }
+          }
+
+          // Update snapshot with new data
           shiftNotificationSnapshotRef.current = nextRow
             ? JSON.stringify({
                 week_start: nextRow.week_start ?? "",
@@ -330,10 +375,37 @@ export default function UserDashboard() {
                 shift_end_time: nextRow.shift_end_time ?? "",
               })
             : null;
+
           await fetchWeeklyShift();
-          const nextNotification = buildUserShiftNotification(payload);
-          if (nextNotification) {
-            await addNotification(nextNotification);
+
+          // Build proper payload for notification
+          let notificationPayload = null;
+          if (eventType === "INSERT" && nextRow) {
+            notificationPayload = {
+              eventType: "INSERT",
+              new: nextRow,
+              commit_timestamp: new Date().toISOString(),
+            };
+          } else if (eventType === "UPDATE" && nextRow && oldData) {
+            notificationPayload = {
+              eventType: "UPDATE",
+              old: oldData,
+              new: nextRow,
+              commit_timestamp: new Date().toISOString(),
+            };
+          } else if (eventType === "DELETE" && oldData) {
+            notificationPayload = {
+              eventType: "DELETE",
+              old: oldData,
+              commit_timestamp: new Date().toISOString(),
+            };
+          }
+
+          if (notificationPayload) {
+            const nextNotification = buildUserShiftNotification(notificationPayload);
+            if (nextNotification) {
+              await addNotification(nextNotification);
+            }
           }
         },
       )

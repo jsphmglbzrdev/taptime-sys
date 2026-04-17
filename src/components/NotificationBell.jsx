@@ -72,21 +72,29 @@ export default function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 z-50 mt-3 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
-          <div className="border-b border-gray-100 px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-black text-gray-800">Notifications</p>
-                <p className="text-[11px] font-medium text-gray-500">
-                  Live updates from your attendance system
-                </p>
-              </div>
-              <span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-black text-orange-600">
-                {unreadCount} unread
-              </span>
-            </div>
+        <div className="fixed inset-0 z-40 md:absolute md:inset-auto md:right-0 md:top-auto md:mt-3 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:rounded-2xl md:border md:border-gray-200 md:shadow-2xl flex items-end md:block md:bg-white rounded-b-2xl md:rounded-2xl">
+          {/* Mobile overlay background */}
+          <div 
+            className="md:hidden fixed inset-0 bg-black/20 backdrop-blur-sm -z-10" 
+            onClick={() => setIsOpen(false)}
+          />
+          
+          {/* Notification content */}
+          <div className="w-full md:w-auto md:max-w-[22rem] bg-white rounded-t-2xl md:rounded-2xl max-h-[90vh] md:max-h-96 overflow-hidden">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-gray-800">Notifications</p>
+                  <p className="text-[11px] font-medium text-gray-500">
+                    Live updates from your attendance system
+                  </p>
+                </div>
+                <span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-black text-orange-600">
+                  {unreadCount} unread
+                </span>
+                </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
               {canRequestPermission && (
                 <button
                   type="button"
@@ -128,40 +136,41 @@ export default function NotificationBell() {
                 </>
               )}
             </div>
-          </div>
+            </div>
 
-          <div className="max-h-96 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="px-4 py-6 text-sm font-medium text-gray-500">
-                No notifications yet.
-              </div>
-            ) : (
-              notifications.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => markAsRead(item.id)}
-                  className={`block w-full border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 cursor-pointer ${
-                    item.read ? "bg-white" : "bg-orange-50/40"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-gray-800">{item.title}</p>
-                      <p className="mt-1 text-xs font-medium leading-5 text-gray-500">
-                        {item.message}
-                      </p>
+            <div className="max-h-96 md:max-h-80 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="px-4 py-6 text-sm font-medium text-gray-500">
+                  No notifications yet.
+                </div>
+              ) : (
+                notifications.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => markAsRead(item.id)}
+                    className={`block w-full border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 cursor-pointer ${
+                      item.read ? "bg-white" : "bg-orange-50/40"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-gray-800">{item.title}</p>
+                        <p className="mt-1 text-xs font-medium leading-5 text-gray-500">
+                          {item.message}
+                        </p>
+                      </div>
+                      {!item.read && (
+                        <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500" />
+                      )}
                     </div>
-                    {!item.read && (
-                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500" />
-                    )}
-                  </div>
-                  <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    {formatTimestamp(item.createdAt)}
-                  </p>
-                </button>
-              ))
-            )}
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                      {formatTimestamp(item.createdAt)}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -21,17 +21,42 @@ export function buildUserAccountNotification(payload) {
   };
 }
 
+function formatShiftTimeLabel(timeStr) {
+  if (!timeStr) return "-";
+  const normalized = String(timeStr).trim();
+  const timeFor = (t) => {
+    const d = new Date(`2000-01-01T${t.length === 5 ? `${t}:00` : t}`);
+    if (Number.isNaN(d.getTime())) return t;
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+  return timeFor(normalized);
+}
+
+function formatDayRange(week_start, week_end) {
+  if (!week_start || !week_end) return "";
+  const days = ["Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"];
+  const startDate = new Date(week_start);
+  const endDate = new Date(week_end);
+  const startDay = days[startDate.getDay()];
+  const endDay = days[endDate.getDay()];
+  return `${startDay} - ${endDay}`;
+}
+
 export function buildUserShiftNotification(payload) {
   const nextRow = payload?.new ?? null;
   const previousRow = payload?.old ?? null;
   const eventType = payload?.eventType;
 
   if (eventType === "INSERT" && nextRow) {
+    const dayRange = formatDayRange(nextRow.week_start, nextRow.week_end);
+    const startTime = formatShiftTimeLabel(nextRow.shift_start_time);
+    const endTime = formatShiftTimeLabel(nextRow.shift_end_time);
+    
     return {
       dedupeKey: `user-shift-insert-${nextRow.employee_auth_id}-${payload.commit_timestamp}`,
       kind: "shift",
-      title: "Shift assigned",
-      message: `Your weekly shift is now ${nextRow.week_start} to ${nextRow.week_end}.`,
+      title: "New shift assigned",
+      message: `Your shift has been assigned: ${dayRange} (${nextRow.week_start} - ${nextRow.week_end}), ${startTime} to ${endTime}`,
     };
   }
 
@@ -45,20 +70,39 @@ export function buildUserShiftNotification(payload) {
     ]);
     if (changedFields.length === 0) return null;
 
+    const dayRange = formatDayRange(nextRow.week_start, nextRow.week_end);
+    const startTime = formatShiftTimeLabel(nextRow.shift_start_time);
+    const endTime = formatShiftTimeLabel(nextRow.shift_end_time);
+    
+    let changeDetails = [];
+    if (getChangedValues(previousRow, nextRow, ["week_start", "week_end"]).length > 0) {
+      const prevDayRange = formatDayRange(previousRow.week_start, previousRow.week_end);
+      changeDetails.push(`week: ${prevDayRange} → ${dayRange}`);
+    }
+    if (getChangedValues(previousRow, nextRow, ["shift_start_time", "shift_end_time"]).length > 0) {
+      const prevStartTime = formatShiftTimeLabel(previousRow.shift_start_time);
+      const prevEndTime = formatShiftTimeLabel(previousRow.shift_end_time);
+      changeDetails.push(`time: ${prevStartTime}-${prevEndTime} → ${startTime}-${endTime}`);
+    }
+
     return {
       dedupeKey: `user-shift-update-${nextRow.employee_auth_id}-${payload.commit_timestamp}`,
       kind: "shift",
       title: "Shift updated",
-      message: `Your assigned shift was changed to ${nextRow.week_start} through ${nextRow.week_end}.`,
+      message: `Your shift has been updated: ${dayRange} (${nextRow.week_start} - ${nextRow.week_end}), ${startTime} to ${endTime}. Changes: ${changeDetails.join(", ")}`,
     };
   }
 
   if (eventType === "DELETE" && previousRow) {
+    const dayRange = formatDayRange(previousRow.week_start, previousRow.week_end);
+    const startTime = formatShiftTimeLabel(previousRow.shift_start_time);
+    const endTime = formatShiftTimeLabel(previousRow.shift_end_time);
+    
     return {
       dedupeKey: `user-shift-delete-${previousRow.employee_auth_id}-${payload.commit_timestamp}`,
       kind: "shift",
       title: "Shift removed",
-      message: "Your assigned weekly shift was removed. Please contact your admin for the updated schedule.",
+      message: `Your shift has been removed: ${dayRange} (${previousRow.week_start} - ${previousRow.week_end}), ${startTime} to ${endTime}. Please contact your admin for the updated schedule.`,
     };
   }
 

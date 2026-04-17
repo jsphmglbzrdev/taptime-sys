@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, RefreshCcw } from "lucide-react";
+import { Download, RefreshCcw, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
-import { listAuditTrail } from "../../../utils/admin";
+import { listAuditTrailPage, clearAuditTrail } from "../../../utils/admin";
+import ConfirmationBox from "../../../components/ConfirmationBox";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -33,38 +34,70 @@ export default function AuditTrailTab() {
   const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 20;
 
-  const loadAuditTrail = useCallback(async () => {
-    setIsLoading(true);
+  const loadAuditTrail = useCallback(
+    async (page = 1) => {
+      setIsLoading(true);
+      try {
+        const res = await listAuditTrailPage({ page, pageSize });
+        if (!res.success) {
+          toast.error(res.error || "Failed to load audit trail.");
+          setRows([]);
+          setTotalCount(0);
+          return;
+        }
+        setRows(res.data ?? []);
+        setTotalCount(res.count ?? 0);
+        setCurrentPage(res.page ?? 1);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    loadAuditTrail(1);
+  }, [loadAuditTrail]);
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const handleClearHistory = useCallback(async () => {
+    setIsClearConfirmOpen(false);
+    setIsClearing(true);
+		console.log("Clearing audit trail...");
     try {
-      const res = await listAuditTrail();
+      const res = await clearAuditTrail();
       if (!res.success) {
-        toast.error(res.error || "Failed to load audit trail.");
-        setRows([]);
+        toast.error(res.error || "Failed to clear audit trail.");
         return;
       }
-      setRows(res.data ?? []);
+      toast.success("Audit trail cleared successfully.");
+      setRows([]);
+      setTotalCount(0);
+      setCurrentPage(1);
     } finally {
-      setIsLoading(false);
+      setIsClearing(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadAuditTrail();
-  }, [loadAuditTrail]);
-
   const summary = useMemo(
     () => ({
-      total: rows.length,
+      total: totalCount,
       auth: rows.filter((row) => row.module === "auth").length,
       admin: rows.filter((row) => row.module === "admin").length,
       user: rows.filter((row) => row.module === "user").length,
     }),
-    [rows],
+    [rows, totalCount],
   );
 
   const handleExport = useCallback(() => {
-    if (rows.length === 0) {
+    if (totalCount === 0) {
       toast.info("No audit trail records to export.");
       return;
     }
@@ -96,7 +129,7 @@ export default function AuditTrailTab() {
     } finally {
       setIsExporting(false);
     }
-  }, [rows]);
+  }, [totalCount]);
 
   return (
     <div className="space-y-6">
@@ -112,7 +145,7 @@ export default function AuditTrailTab() {
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={loadAuditTrail}
+            onClick={() => loadAuditTrail(1)}
             disabled={isLoading}
             className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold bg-white border border-gray-200 cursor-pointer hover:bg-gray-50 text-gray-700 disabled:opacity-70 disabled:cursor-not-allowed"
           >
@@ -122,14 +155,26 @@ export default function AuditTrailTab() {
           <button
             type="button"
             onClick={handleExport}
-            disabled={isLoading || isExporting || rows.length === 0}
+            disabled={isLoading || isExporting || totalCount === 0}
             className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold bg-orange-500 text-white cursor-pointer hover:bg-orange-600 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             <Download size={18} />
             {isExporting ? "Exporting..." : "Download Excel"}
           </button>
+          {totalCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsClearConfirmOpen(true)}
+              disabled={isLoading || isClearing}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold bg-red-500 text-white cursor-pointer hover:bg-red-600 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              <Trash2 size={18} />
+              {isClearing ? "Clearing..." : "Clear History"}
+            </button>
+          )}
         </div>
       </div>
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
@@ -236,7 +281,46 @@ export default function AuditTrailTab() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="border-t border-gray-100 px-6 py-4 flex items-center justify-between">
+            <div className="text-sm font-medium text-gray-600">
+              Page {currentPage} of {totalPages} • Showing {rows.length} of {totalCount} records
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => loadAuditTrail(currentPage - 1)}
+                disabled={currentPage === 1 || isLoading}
+                className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-sm cursor-pointer hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} />
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => loadAuditTrail(currentPage + 1)}
+                disabled={currentPage === totalPages || isLoading}
+                className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-sm cursor-pointer hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+			
+      {isClearConfirmOpen && (
+        <ConfirmationBox
+          isModalOpen={isClearConfirmOpen}
+          setIsModalOpen={setIsClearConfirmOpen}
+          title="Clear Audit Trail"
+          description="Are you sure you want to delete all audit trail records? This action cannot be undone."
+          buttonText="Clear All"
+          handleAction={handleClearHistory}
+        />
+      )}
     </div>
   );
 }
