@@ -120,6 +120,7 @@ export default function AvatarEditorModal({
   useEffect(() => {
     if (!isOpen || !file) return;
     let cancelled = false;
+    let objectUrl = "";
 
     setImageSrc("");
     setImageSize({ width: 0, height: 0 });
@@ -129,8 +130,25 @@ export default function AvatarEditorModal({
     setOffsetX(0);
     setOffsetY(0);
 
-    readFileAsDataUrl(file)
-      .then(async (dataUrl) => {
+    const initializePreview = async () => {
+      try {
+        objectUrl = URL.createObjectURL(file);
+        setImageSrc(objectUrl);
+        const image = await loadImage(objectUrl);
+        if (cancelled) return;
+
+        setImageSize({
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+        });
+        setIsImageReady(true);
+        return;
+      } catch {
+        // Fall through to FileReader for browsers that reject object URLs here.
+      }
+
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
         if (cancelled) return;
 
         setImageSrc(dataUrl);
@@ -142,14 +160,19 @@ export default function AvatarEditorModal({
           height: image.naturalHeight,
         });
         setIsImageReady(true);
-      })
-      .catch((error) => {
+      } catch (error) {
         if (cancelled) return;
         setImageError(error.message || "Failed to load selected image.");
-      });
+      }
+    };
+
+    initializePreview();
 
     return () => {
       cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
     };
   }, [file, isOpen]);
 
