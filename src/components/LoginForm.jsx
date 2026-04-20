@@ -1,18 +1,44 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, User } from "lucide-react";
-import { signIn } from "../utils/auth";
+import { getCurrentUser, signIn } from "../utils/auth";
 import { useLoading } from "../context/LoadingContext";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import logo from "/surf2sawa.png";
 
 export default function LoginForm({ onLogin }) {
   const { setLoading } = useLoading();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let cancelled = false;
+
+    const redirectAuthenticatedUser = async () => {
+      const { data, error } = await getCurrentUser(user.id);
+      if (cancelled || error) return;
+
+      if (data?.role === "Admin") {
+        navigate("/admin/dashboard", { replace: true });
+        return;
+      }
+
+      navigate("/user/dashboard", { replace: true });
+    };
+
+    redirectAuthenticatedUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, user?.id]);
 
   // LoginPage.jsx or MainLogin.jsx
   const handleSubmit = async (e) => {
