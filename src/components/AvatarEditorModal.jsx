@@ -76,17 +76,25 @@ async function createCroppedFile({
   );
 
   const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (nextBlob) => {
-        if (!nextBlob) reject(new Error("Failed to create cropped image."));
-        else resolve(nextBlob);
-      },
-      outputType,
-      0.92,
-    );
+    if (typeof canvas.toBlob === "function") {
+      canvas.toBlob(
+        (nextBlob) => {
+          if (!nextBlob) reject(new Error("Failed to create cropped image."));
+          else resolve(nextBlob);
+        },
+        outputType,
+        0.92,
+      );
+      return;
+    }
+
+    fetch(canvas.toDataURL(outputType, 0.92))
+      .then((response) => response.blob())
+      .then(resolve)
+      .catch(() => reject(new Error("Failed to create cropped image.")));
   });
 
-  return new File([blob], "avatar.jpg", { type: outputType });
+  return blob;
 }
 
 export default function AvatarEditorModal({
@@ -188,6 +196,7 @@ export default function AvatarEditorModal({
 
   const handleSave = async () => {
     try {
+      setImageError("");
       const croppedFile = await createCroppedFile({
         imageSrc,
         imageWidth: imageSize.width,
@@ -199,6 +208,7 @@ export default function AvatarEditorModal({
       });
       await onSave(croppedFile);
     } catch (error) {
+      setImageError(error?.message || "Failed to prepare the selected image.");
       console.error(error);
     }
   };
