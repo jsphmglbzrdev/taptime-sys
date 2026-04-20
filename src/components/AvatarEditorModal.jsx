@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Crop, Upload, X } from "lucide-react";
 
 const CROP_SIZE = 280;
+const MODAL_CHROME_HEIGHT = 420;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -89,6 +90,10 @@ export default function AvatarEditorModal({
   const [zoom, setZoom] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
+  const [viewportSize, setViewportSize] = useState(() => ({
+    width: typeof window !== "undefined" ? window.innerWidth : 1280,
+    height: typeof window !== "undefined" ? window.innerHeight : 900,
+  }));
 
   useEffect(() => {
     if (!isOpen || !file) return;
@@ -107,6 +112,24 @@ export default function AvatarEditorModal({
     };
   }, [file, isOpen]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !isOpen) return undefined;
+
+    const updateViewportSize = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    updateViewportSize();
+    window.addEventListener("resize", updateViewportSize);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportSize);
+    };
+  }, [isOpen]);
+
   const baseScale = useMemo(() => {
     if (!imageSize.width || !imageSize.height) return 1;
     return Math.max(CROP_SIZE / imageSize.width, CROP_SIZE / imageSize.height);
@@ -116,6 +139,12 @@ export default function AvatarEditorModal({
   const drawHeight = imageSize.height * baseScale * zoom;
   const maxOffsetX = Math.max(0, (drawWidth - CROP_SIZE) / 2);
   const maxOffsetY = Math.max(0, (drawHeight - CROP_SIZE) / 2);
+  const previewScale = useMemo(() => {
+    const widthScale = (viewportSize.width - 80) / CROP_SIZE;
+    const heightScale = (viewportSize.height - MODAL_CHROME_HEIGHT) / CROP_SIZE;
+    return clamp(Math.min(1, widthScale, heightScale), 0.62, 1);
+  }, [viewportSize.height, viewportSize.width]);
+  const previewFrameSize = Math.round(CROP_SIZE * previewScale);
 
   useEffect(() => {
     setOffsetX((current) => clamp(current, -maxOffsetX, maxOffsetX));
@@ -142,14 +171,14 @@ export default function AvatarEditorModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
         onClick={isSaving ? undefined : onClose}
       />
 
-      <div className="relative w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
-        <div className="mb-5 flex items-center justify-between gap-4">
+      <div className="relative max-h-[calc(100vh-1.5rem)] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100vh-3rem)] sm:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-black text-gray-800">{title}</h3>
             <p className="text-sm text-gray-500">
@@ -166,15 +195,23 @@ export default function AvatarEditorModal({
           </button>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-6">
           <div className="flex justify-center">
-            <div className="rounded-[2rem] bg-gray-100 p-4">
+            <div className="rounded-[2rem] bg-gray-100 p-3 sm:p-4">
               <div
                 className="relative overflow-hidden rounded-[2rem] bg-gray-200"
-                style={{ width: CROP_SIZE, height: CROP_SIZE }}
+                style={{ width: previewFrameSize, height: previewFrameSize }}
               >
                 {imageSrc ? (
-                  <>
+                  <div
+                    className="absolute left-0 top-0"
+                    style={{
+                      width: CROP_SIZE,
+                      height: CROP_SIZE,
+                      transform: `scale(${previewScale})`,
+                      transformOrigin: "top left",
+                    }}
+                  >
                     <img
                       src={imageSrc}
                       alt="Avatar crop preview"
@@ -187,7 +224,7 @@ export default function AvatarEditorModal({
                     />
                     <div className="pointer-events-none absolute inset-0 rounded-[2rem] ring-4 ring-white/80" />
                     <div className="pointer-events-none absolute inset-3 rounded-full border-2 border-white/90 shadow-[0_0_0_9999px_rgba(15,23,42,0.35)]" />
-                  </>
+                  </div>
                 ) : null}
               </div>
             </div>
