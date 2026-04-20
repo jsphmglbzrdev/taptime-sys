@@ -2,40 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Crop, Upload, X } from "lucide-react";
 
 const CROP_SIZE = 280;
-const MODAL_CHROME_HEIGHT = 420;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Failed to read image."));
-    reader.readAsDataURL(file);
-  });
-}
-
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = async () => {
-      if (typeof img.decode === "function") {
-        try {
-          await img.decode();
-        } catch {
-          // Some mobile browsers throw even after onload; keep going.
-        }
-      }
-      resolve(img);
-    };
+    img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Failed to load image."));
     img.src = src;
   });
 }
 
-async function createCroppedFile({
+async function createCroppedBlob({
   imageSrc,
   imageWidth,
   imageHeight,
@@ -75,26 +56,19 @@ async function createCroppedFile({
     CROP_SIZE,
   );
 
-  const blob = await new Promise((resolve, reject) => {
-    if (typeof canvas.toBlob === "function") {
-      canvas.toBlob(
-        (nextBlob) => {
-          if (!nextBlob) reject(new Error("Failed to create cropped image."));
-          else resolve(nextBlob);
-        },
-        outputType,
-        0.92,
-      );
-      return;
-    }
-
-    fetch(canvas.toDataURL(outputType, 0.92))
-      .then((response) => response.blob())
-      .then(resolve)
-      .catch(() => reject(new Error("Failed to create cropped image.")));
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Failed to create cropped image."));
+          return;
+        }
+        resolve(blob);
+      },
+      outputType,
+      0.92,
+    );
   });
-
-  return blob;
 }
 
 export default function AvatarEditorModal({
@@ -110,90 +84,46 @@ export default function AvatarEditorModal({
   const [zoom, setZoom] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
-  const [isImageReady, setIsImageReady] = useState(false);
   const [imageError, setImageError] = useState("");
-  const [viewportSize, setViewportSize] = useState(() => ({
-    width: typeof window !== "undefined" ? window.innerWidth : 1280,
-    height: typeof window !== "undefined" ? window.innerHeight : 900,
-  }));
 
   useEffect(() => {
-    if (!isOpen || !file) return;
-    let cancelled = false;
-    let objectUrl = "";
+    if (!isOpen || !file) return undefined;
 
-    setImageSrc("");
+    const objectUrl = URL.createObjectURL(file);
+    let cancelled = false;
+
+    setImageSrc(objectUrl);
     setImageSize({ width: 0, height: 0 });
-    setIsImageReady(false);
     setImageError("");
     setZoom(1);
     setOffsetX(0);
     setOffsetY(0);
 
-    const initializePreview = async () => {
-      try {
-        objectUrl = URL.createObjectURL(file);
-        setImageSrc(objectUrl);
-        const image = await loadImage(objectUrl);
+    loadImage(objectUrl)
+      .then((image) => {
         if (cancelled) return;
-
         setImageSize({
           width: image.naturalWidth,
           height: image.naturalHeight,
         });
-        setIsImageReady(true);
-        return;
-      } catch {
-        // Fall through to FileReader for browsers that reject object URLs here.
-      }
-
-      try {
-        const dataUrl = await readFileAsDataUrl(file);
+      })
+      .catch((error) => {
         if (cancelled) return;
-
-        setImageSrc(dataUrl);
-        const image = await loadImage(dataUrl);
-        if (cancelled) return;
-
-        setImageSize({
-          width: image.naturalWidth,
-          height: image.naturalHeight,
-        });
-        setIsImageReady(true);
-      } catch (error) {
-        if (cancelled) return;
-        setImageError(error.message || "Failed to load selected image.");
-      }
-    };
-
-    initializePreview();
+        setImageError(error.message || "Failed to load image.");
+      });
 
     return () => {
       cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      URL.revokeObjectURL(objectUrl);
     };
   }, [file, isOpen]);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !isOpen) return undefined;
-
-    const updateViewportSize = () => {
-      setViewportSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    updateViewportSize();
-    window.addEventListener("resize", updateViewportSize);
-
-    return () => {
-      window.removeEventListener("resize", updateViewportSize);
-    };
+  const previewFrameSize = useMemo(() => {
+    if (typeof window === "undefined") return CROP_SIZE;
+    return Math.max(220, Math.min(CROP_SIZE, window.innerWidth - 96));
   }, [isOpen]);
 
+  const previewScale = previewFrameSize / CROP_SIZE;
   const baseScale = useMemo(() => {
     if (!imageSize.width || !imageSize.height) return 1;
     return Math.max(CROP_SIZE / imageSize.width, CROP_SIZE / imageSize.height);
@@ -203,12 +133,6 @@ export default function AvatarEditorModal({
   const drawHeight = imageSize.height * baseScale * zoom;
   const maxOffsetX = Math.max(0, (drawWidth - CROP_SIZE) / 2);
   const maxOffsetY = Math.max(0, (drawHeight - CROP_SIZE) / 2);
-  const previewScale = useMemo(() => {
-    const widthScale = (viewportSize.width - 80) / CROP_SIZE;
-    const heightScale = (viewportSize.height - MODAL_CHROME_HEIGHT) / CROP_SIZE;
-    return clamp(Math.min(1, widthScale, heightScale), 0.62, 1);
-  }, [viewportSize.height, viewportSize.width]);
-  const previewFrameSize = Math.round(CROP_SIZE * previewScale);
 
   useEffect(() => {
     setOffsetX((current) => clamp(current, -maxOffsetX, maxOffsetX));
@@ -220,7 +144,7 @@ export default function AvatarEditorModal({
   const handleSave = async () => {
     try {
       setImageError("");
-      const croppedFile = await createCroppedFile({
+      const croppedBlob = await createCroppedBlob({
         imageSrc,
         imageWidth: imageSize.width,
         imageHeight: imageSize.height,
@@ -229,10 +153,9 @@ export default function AvatarEditorModal({
         offsetX,
         offsetY,
       });
-      await onSave(croppedFile);
+      await onSave(croppedBlob);
     } catch (error) {
       setImageError(error?.message || "Failed to prepare the selected image.");
-      console.error(error);
     }
   };
 
@@ -245,7 +168,7 @@ export default function AvatarEditorModal({
 
       <div className="relative max-h-[calc(100vh-1.5rem)] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100vh-3rem)] sm:p-6">
         <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <h3 className="text-lg font-black text-gray-800">{title}</h3>
             <p className="text-sm text-gray-500">
               Adjust zoom and position before uploading.
@@ -255,7 +178,7 @@ export default function AvatarEditorModal({
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="rounded-xl p-2 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="shrink-0 rounded-xl p-2 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <X size={18} />
           </button>
@@ -268,7 +191,7 @@ export default function AvatarEditorModal({
                 className="relative overflow-hidden rounded-[2rem] bg-gray-200"
                 style={{ width: previewFrameSize, height: previewFrameSize }}
               >
-                {imageSrc && isImageReady ? (
+                {imageSrc && imageSize.width ? (
                   <div
                     className="absolute left-0 top-0"
                     style={{
@@ -362,6 +285,12 @@ export default function AvatarEditorModal({
               displayed as a circle across the app.
             </div>
 
+            {imageError ? (
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-600">
+                {imageError}
+              </div>
+            ) : null}
+
             <div className="flex flex-col-reverse gap-3 sm:flex-row">
               <button
                 type="button"
@@ -374,7 +303,7 @@ export default function AvatarEditorModal({
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={isSaving || !isImageReady || !imageSize.width}
+                disabled={isSaving || !imageSize.width}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white transition-all hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Upload size={16} />
