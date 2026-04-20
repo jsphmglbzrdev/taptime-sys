@@ -1,23 +1,50 @@
-const CACHE_NAME = "taptime-shell-v2";
-const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest", "/logo.png"];
+const STATIC_CACHE = "taptime-static-v3";
+const SHELL_CACHE = "taptime-shell-v3";
+const APP_SHELL = [
+  "/index.html",
+  "/manifest.webmanifest",
+  "/logo.png",
+  "/surf2sawa.png",
+];
+
+function isSameOrigin(requestUrl) {
+  return requestUrl.origin === self.location.origin;
+}
+
+function isNavigationRequest(request) {
+  return request.mode === "navigate" || request.destination === "document";
+}
+
+function isStaticAssetRequest(requestUrl, request) {
+  if (requestUrl.pathname.startsWith("/assets/")) return true;
+
+  return ["style", "script", "worker", "font", "image"].includes(
+    request.destination,
+  );
+}
+
+async function cacheShell() {
+  const cache = await caches.open(SHELL_CACHE);
+  await cache.addAll(APP_SHELL);
+}
+
+async function cleanupOldCaches() {
+  const validCaches = new Set([STATIC_CACHE, SHELL_CACHE]);
+  const keys = await caches.keys();
+  await Promise.all(
+    keys
+      .filter((key) => !validCaches.has(key))
+      .map((key) => caches.delete(key)),
+  );
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
-  );
+  event.waitUntil(cacheShell());
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key)),
-      ),
-    ),
-  );
+  event.waitUntil(cleanupOldCaches());
   self.clients.claim();
 });
 
@@ -25,28 +52,45 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
-  const isSameOrigin = requestUrl.origin === self.location.origin;
+  if (!isSameOrigin(requestUrl)) {
+    return;
+  }
 
-  // Never intercept cross-origin requests like Supabase auth/storage APIs.
-  if (!isSameOrigin) {
+  if (isNavigationRequest(event.request)) {
+    event.respondWith(
+      fetch(event.request)
+        .then(async (response) => {
+          if (response?.ok) {
+            const cache = await caches.open(SHELL_CACHE);
+            await cache.put("/index.html", response.clone());
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cache = await caches.open(SHELL_CACHE);
+          return cache.match("/index.html");
+        }),
+    );
+    return;
+  }
+
+  if (!isStaticAssetRequest(requestUrl, event.request)) {
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(event.request)
-        .then((response) => {
-          if (!response || response.status !== 200) {
-            return response;
+      const networkFetch = fetch(event.request)
+        .then(async (response) => {
+          if (response?.ok) {
+            const cache = await caches.open(STATIC_CACHE);
+            await cache.put(event.request, response.clone());
           }
-
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match("/index.html"));
+        .catch(() => cached);
+
+      return cached || networkFetch;
     }),
   );
 });
