@@ -5,6 +5,9 @@ import React, {
   useRef,
   useState,
 } from "react";
+
+import confetti from "canvas-confetti";
+
 import {
   Clock,
   CheckCircle2,
@@ -89,7 +92,6 @@ export default function UserDashboard() {
   const { user } = useAuth();
   const { addNotification } = useAppShell();
   const { setLoading } = useLoading();
-  const [history, setHistory] = useState([]);
   const [todayEntry, setTodayEntry] = useState(null);
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -128,25 +130,15 @@ export default function UserDashboard() {
 
     const shiftDate = getShiftDate(new Date());
 
-    const [recentRes, todayRes] = await Promise.all([
-      supabase
-        .from("time_entries")
-        .select("*")
-        .eq("auth_id", user.id)
-        .order("shift_date", { ascending: false })
-        .limit(14),
-      supabase
-        .from("time_entries")
-        .select("*")
-        .eq("auth_id", user.id)
-        .eq("shift_date", shiftDate)
-        .maybeSingle(),
-    ]);
+    const todayRes = await supabase
+      .from("time_entries")
+      .select("*")
+      .eq("auth_id", user.id)
+      .eq("shift_date", shiftDate)
+      .maybeSingle();
 
-    if (recentRes.error) throw recentRes.error;
     if (todayRes.error) throw todayRes.error;
 
-    setHistory(recentRes.data ?? []);
     setTodayEntry(todayRes.data ?? null);
   }, [getShiftDate, user]);
 
@@ -499,6 +491,105 @@ export default function UserDashboard() {
     todayEntry,
   ]);
 
+  const todayShiftTimes = useMemo(
+    () => getEntryShiftTimes(todayEntry ?? {}, weeklyShift),
+    [todayEntry, weeklyShift],
+  );
+
+  const todayScheduledShift = useMemo(() => {
+    if (todayEntry?.scheduled_shift) return todayEntry.scheduled_shift;
+    if (!weeklyShift?.shift_start_time || !weeklyShift?.shift_end_time) return "No shift assigned";
+    return `${formatShiftTimeLabel(weeklyShift.shift_start_time)} - ${formatShiftTimeLabel(weeklyShift.shift_end_time)}`;
+  }, [
+    todayEntry?.scheduled_shift,
+    weeklyShift?.shift_end_time,
+    weeklyShift?.shift_start_time,
+  ]);
+
+  const todayClockInLabel = useMemo(
+    () => formatTime(todayEntry?.clock_in_at),
+    [formatTime, todayEntry?.clock_in_at],
+  );
+
+  const todayClockOutLabel = useMemo(
+    () => formatTime(todayEntry?.clock_out_at),
+    [formatTime, todayEntry?.clock_out_at],
+  );
+
+  const isTodayLate = useMemo(
+    () =>
+      todayClockInLabel !== "-" &&
+      !!todayShiftTimes?.shiftStart &&
+      isLate(todayClockInLabel, todayShiftTimes.shiftStart, 5),
+    [todayClockInLabel, todayShiftTimes?.shiftStart],
+  );
+
+  const isTodayUnderTime = useMemo(
+    () =>
+      todayClockOutLabel !== "-" &&
+      !!todayShiftTimes?.shiftEnd &&
+      isUnderTime(todayClockOutLabel, todayShiftTimes.shiftEnd),
+    [todayClockOutLabel, todayShiftTimes?.shiftEnd],
+  );
+
+  const todayLogHighlights = useMemo(
+    () => [
+      {
+        label: "Clock In",
+        value: todayClockInLabel,
+        accent: isTodayLate ? "Late" : null,
+      },
+      {
+        label: "Clock Out",
+        value: todayClockOutLabel,
+        accent: isTodayUnderTime ? "Undertime" : null,
+      },
+      {
+        label: "Morning Break",
+        value:
+          todayEntry?.morning_break_in_at || todayEntry?.morning_break_out_at
+            ? `${formatTime(todayEntry?.morning_break_in_at)} - ${formatTime(todayEntry?.morning_break_out_at)}`
+            : "-",
+      },
+      {
+        label: "Lunch Break",
+        value:
+          todayEntry?.lunch_break_in_at || todayEntry?.lunch_break_out_at
+            ? `${formatTime(todayEntry?.lunch_break_in_at)} - ${formatTime(todayEntry?.lunch_break_out_at)}`
+            : "-",
+      },
+      {
+        label: "Afternoon Break",
+        value:
+          todayEntry?.afternoon_break_in_at || todayEntry?.afternoon_break_out_at
+            ? `${formatTime(todayEntry?.afternoon_break_in_at)} - ${formatTime(todayEntry?.afternoon_break_out_at)}`
+            : "-",
+      },
+      {
+        label: "Overtime",
+        value:
+          todayEntry?.overtime_start || todayEntry?.overtime_end
+            ? `${formatTime(todayEntry?.overtime_start)} - ${formatTime(todayEntry?.overtime_end)}`
+            : "-",
+      },
+    ],
+    [
+      formatTime,
+      isTodayLate,
+      isTodayUnderTime,
+      todayClockInLabel,
+      todayClockOutLabel,
+      todayEntry?.afternoon_break_in_at,
+      todayEntry?.afternoon_break_out_at,
+      todayEntry?.lunch_break_in_at,
+      todayEntry?.lunch_break_out_at,
+      todayEntry?.morning_break_in_at,
+      todayEntry?.morning_break_out_at,
+      todayEntry?.overtime_end,
+      todayEntry?.overtime_start,
+    ],
+  );
+
   const auditActor = useMemo(
     () => ({
       auth_id: user?.id,
@@ -710,6 +801,31 @@ export default function UserDashboard() {
         clock_out_at: nowIso,
       });
       await fetchAttendance();
+
+      // "School's out" celebration with side cannons
+      const end = Date.now() + 4 * 1000;
+      const colors = ["#f97316", "#fb923c", "#fdba74", "#facc15", "#22c55e"];
+
+      (function frame() {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0 },
+          colors: colors
+        });
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1 },
+          colors: colors
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      }());
 
       toast.success("Clocked out.");
       await logAuditEvent({
@@ -1662,193 +1778,92 @@ export default function UserDashboard() {
                   {/* Timeout intentionally removed */}
                 </div>
 
-                {/* History Table */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-                    <h3 className="font-bold text-gray-800">Recent Activity</h3>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("My Logs")}
-                      className="text-xs cursor-pointer font-bold text-orange-500 hover:underline flex items-center gap-1"
-                    >
-                      VIEW ALL <ChevronRight size={14} />
-                    </button>
+                <div className="overflow-hidden rounded-[28px] border border-orange-100/70 bg-white shadow-[0_24px_60px_-32px_rgba(249,115,22,0.35)]">
+                  <div className="border-b border-orange-100/70 bg-gradient-to-r from-orange-50 via-amber-50 to-white p-6">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.28em] text-orange-500">
+                          Today Log
+                        </p>
+                        <h3 className="mt-2 text-2xl font-black tracking-tight text-gray-900">
+                          Today&apos;s attendance snapshot
+                        </h3>
+                        <p className="mt-2 text-sm font-medium text-gray-500">
+                          Focus on today here, then open My Logs for your full attendance history.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3 shadow-sm backdrop-blur">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gray-400">
+                            Scheduled Shift
+                          </p>
+                          <p className="mt-1 text-sm font-black text-gray-800">
+                            {todayScheduledShift}
+                          </p>
+                        </div>
+
+                        <div
+                          className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-black shadow-sm ${
+                            computedStatus.tone === "green"
+                              ? "bg-green-50 text-green-700"
+                              : "bg-orange-50 text-orange-700"
+                          }`}
+                        >
+                          {computedStatus.tone === "green" ? (
+                            <CheckCircle2 size={16} />
+                          ) : (
+                            <AlertCircle size={16} />
+                          )}
+                          {computedStatus.label}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("My Logs")}
+                          className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm font-black text-orange-600 transition-all hover:-translate-y-0.5 hover:border-orange-300 hover:bg-orange-50"
+                        >
+                          Open My Logs
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="text-left text-[10px] uppercase tracking-widest text-gray-400 bg-gray-50/50">
-                          <th className="px-6 py-3 font-bold">Date</th>
-                          <th className="px-6 py-3 font-bold">
-                            Scheduled Time Shift
-                          </th>
-                          <th className="px-6 py-3 font-bold">Clock In</th>
-                          <th className="px-6 py-3 font-bold">
-                            Morning Break Time (Time In)
-                          </th>
-                          <th className="px-6 py-3 font-bold">
-                            Morning Break Time (Time Out)
-                          </th>
-                          <th className="px-6 py-3 font-bold">
-                            Afternoon Break Time (Time In)
-                          </th>
-                          <th className="px-6 py-3 font-bold">
-                            Afternoon Break Time (Time Out)
-                          </th>
-                          <th className="px-6 py-3 font-bold">
-                            Lunch Break Time (Time In)
-                          </th>
-                          <th className="px-6 py-3 font-bold">
-                            Lunch Break Time (Time Out)
-                          </th>
-                          <th className="px-6 py-3 font-bold">Clock Out</th>
-                          <th className="px-6 py-3 font-bold">
-                            Overtime (Time In)
-                          </th>
-                          <th className="px-6 py-3 font-bold">
-                            Overtime (Time Out)
-                          </th>
-                          <th className="px-6 py-3 font-bold text-right">
-                            Status
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {history.map((log) => {
-                          const hasClockIn = !!log.clock_in_at;
-                          const hasClockOut = !!log.clock_out_at;
-                          const hasMorningIn = !!log.morning_break_in_at;
-                          const hasMorningOut = !!log.morning_break_out_at;
-                          const hasAfternoonIn = !!log.afternoon_break_in_at;
-                          const hasAfternoonOut = !!log.afternoon_break_out_at;
-                          const hasLunchIn = !!log.lunch_break_in_at;
-                          const hasLunchOut = !!log.lunch_break_out_at;
-                          const hasOvertimeIn = !!log.overtime_start;
-                          const hasOvertimeOut = !!log.overtime_end;
-                          const hasOvertimeActive =
-                            hasOvertimeIn && !hasOvertimeOut;
-                          const hasOvertimeCompleted =
-                            hasOvertimeIn && hasOvertimeOut;
 
-                          const { shiftStart, shiftEnd } = getEntryShiftTimes(
-                            log,
-                            weeklyShift,
-                          );
-                          const formattedLogClockIn = formatTime(log?.clock_in_at);
-                          const formattedLogClockOut = formatTime(log?.clock_out_at);
-                          const considerLate =
-                            formattedLogClockIn !== "-" &&
-                            !!shiftStart &&
-                            isLate(
-                              formattedLogClockIn, // "04:41 PM"
-                              shiftStart, // "07:00 AM" or "07:00:00"
-                              5,
-                            );
+                  <div className="p-6">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {todayLogHighlights.map((item) => (
+                        <div
+                          key={item.label}
+                          className="rounded-2xl border border-gray-100 bg-gradient-to-br from-white to-orange-50/40 p-5 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-gray-400">
+                              {item.label}
+                            </p>
+                            {item.accent && (
+                              <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-orange-700">
+                                {item.accent}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-4 text-lg font-black text-gray-900">
+                            {item.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
 
-                          const considerUnderTime =
-                            formattedLogClockOut !== "-" &&
-                            !!shiftEnd &&
-                            isUnderTime(formattedLogClockOut, shiftEnd);
-
-                          const statusLabel = hasOvertimeCompleted
-                            ? "Shift Completed with Overtime"
-                            : hasOvertimeActive
-                              ? "Overtime"
-                            : hasClockOut
-                              ? "Shift Completed"
-                            : hasMorningIn && !hasMorningOut
-                              ? "Morning Break"
-                              : hasAfternoonIn && !hasAfternoonOut
-                                ? "Afternoon Break"
-                                : hasLunchIn && !hasLunchOut
-                                  ? "Lunch Break"
-                                  : hasClockIn
-                                    ? "Working"
-                                    : "Not started";
-
-                          const statusTone = hasOvertimeActive
-                              ? "orange"
-                            : hasOvertimeCompleted || hasClockOut
-                              ? "green"
-                            : hasMorningIn && !hasMorningOut
-                              ? "orange"
-                              : hasAfternoonIn && !hasAfternoonOut
-                                ? "orange"
-                                : hasLunchIn && !hasLunchOut
-                                  ? "orange"
-                                  : "green";
-
-                          return (
-                            <tr key={log.id} className="text-sm">
-                              <td className="px-6 py-4 font-bold text-gray-700">
-                                {log.shift_date}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {log.scheduled_shift}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formattedLogClockIn}{" "}
-                                {considerLate && (
-                                  <span className="bg-orange-600 text-white px-2 rounded-2xl">
-                                    Late
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.morning_break_in_at)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.morning_break_out_at)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.afternoon_break_in_at)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.afternoon_break_out_at)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.lunch_break_in_at)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.lunch_break_out_at)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formattedLogClockOut}
-
-                                {log.clock_out_at && considerUnderTime && (
-                                  <span className="bg-orange-600 ml-1 text-white px-2 rounded-2xl">
-                                     Undertime
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.overtime_start)}
-                              </td>
-                              <td className="px-6 py-4 text-gray-500">
-                                {formatTime(log.overtime_end)}
-                              </td>
-
-                              <td className="px-6 py-4 text-right">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
-                                    statusTone === "green"
-                                      ? "bg-green-50 text-green-600"
-                                      : "bg-orange-50 text-orange-600"
-                                  }`}
-                                >
-                                  {statusTone === "green" ? (
-                                    <CheckCircle2 size={12} />
-                                  ) : (
-                                    <AlertCircle size={12} />
-                                  )}
-                                  {statusLabel}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                    {!todayEntry?.clock_in_at && (
+                      <div className="mt-5 rounded-2xl border border-dashed border-orange-200 bg-orange-50/70 px-5 py-4">
+                        <p className="text-sm font-bold text-orange-700">
+                          No attendance record has been started for today yet.
+                        </p>
+                        <p className="mt-1 text-sm text-orange-600/90">
+                          Once you clock in, this panel will show your live time-in, breaks, clock-out, and overtime details.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
