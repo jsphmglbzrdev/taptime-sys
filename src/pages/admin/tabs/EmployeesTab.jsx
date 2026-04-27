@@ -99,6 +99,10 @@ function EmployeesTab() {
     () => !!selected?.auth_id && !!user?.id && selected.auth_id === user.id,
     [selected, user],
   );
+  const employeeAccounts = useMemo(
+    () => employees.filter((emp) => emp.role === "Employee"),
+    [employees],
+  );
 
   const handleSave = useCallback(
     async ({ auth_id, first_name, last_name, password }) => {
@@ -332,8 +336,18 @@ function EmployeesTab() {
         </button>
       </div>
 
+      {employeeAccounts.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
+          <h3 className="text-lg font-black text-gray-800">
+            No employee accounts yet
+          </h3>
+          <p className="mt-2 text-sm font-medium text-gray-500">
+            Create an employee account to have it appear in this list.
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {employees.map((emp) => {
+        {employeeAccounts.map((emp) => {
           const name =
             `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() ||
             emp.email;
@@ -348,7 +362,6 @@ function EmployeesTab() {
           const canDelete = emp.auth_id !== user?.id;
 
           return (
-            emp.role === "Employee" && (
               <div
                 key={emp.auth_id}
                 className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all group"
@@ -406,10 +419,10 @@ function EmployeesTab() {
                   </div>
                 </div>
               </div>
-            )
           );
         })}
       </div>
+      )}
       <ManageShiftModal
         isManageShiftOpen={isManageShiftOpen}
         onClose={() => {
@@ -426,6 +439,7 @@ function EmployeesTab() {
       />
 
       <EditEmployeeModal
+        key={selected?.auth_id ?? "no-employee"}
         isOpen={isEditOpen}
         onClose={closeEditModal}
         employee={selected}

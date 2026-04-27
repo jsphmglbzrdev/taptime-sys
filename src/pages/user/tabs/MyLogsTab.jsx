@@ -15,6 +15,7 @@ import {
   isLate,
   isUnderTime,
 } from "../../../utils/shiftSchedule";
+import { formatRenderedHours } from "../../../utils/timeMetrics";
 
 const PAGE_SIZE = 10;
 
@@ -150,7 +151,7 @@ export default function MyLogsTab() {
 
       setRows(res.data ?? []);
       setTotal(res.count ?? 0);
-    } catch (err) {
+    } catch {
       toast.error("Failed to load logs.");
     } finally {
       setIsLoading(false);
@@ -270,6 +271,11 @@ export default function MyLogsTab() {
                 minute: "2-digit",
               })
             : "",
+          "Hours Rendered": formatRenderedHours(r.clock_in_at, r.clock_out_at),
+          "Overtime Hours": formatRenderedHours(
+            r.overtime_start,
+            r.overtime_end,
+          ),
           Status: label,
         };
       });
@@ -280,7 +286,7 @@ export default function MyLogsTab() {
 
       const fileName = `my-logs-${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
-    } catch (err) {
+    } catch {
       toast.error("Failed to export Excel.");
     } finally {
       setIsDownloading(false);
@@ -363,6 +369,8 @@ export default function MyLogsTab() {
                 <th className="px-6 py-3 font-bold">Clock Out</th>
                 <th className="px-6 py-3 font-bold">Overtime Start</th>
                 <th className="px-6 py-3 font-bold">Overtime End</th>
+                <th className="px-6 py-3 font-bold">Hours Rendered</th>
+                <th className="px-6 py-3 font-bold">Overtime Hours</th>
                 <th className="px-6 py-3 font-bold text-right">Status</th>
               </tr>
             </thead>
@@ -419,6 +427,12 @@ export default function MyLogsTab() {
                     <td className="px-6 py-4 text-gray-500">
                       {formatTime(r.overtime_end)}
                     </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatRenderedHours(r.clock_in_at, r.clock_out_at)}
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">
+                      {formatRenderedHours(r.overtime_start, r.overtime_end)}
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
@@ -442,7 +456,7 @@ export default function MyLogsTab() {
                 <tr>
                   <td
                     className="px-6 py-8 text-gray-400 text-sm font-medium"
-                    colSpan={13}
+                    colSpan={15}
                   >
                     No logs found.
                   </td>

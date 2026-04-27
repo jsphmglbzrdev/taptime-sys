@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { logAuditEvent } from "./auditTrail";
+import { parseAttendanceQrPayload } from "./attendanceQr";
 
 const supabaseAdmin = createClient(
 	import.meta.env.VITE_SUPABASE_URL,
@@ -259,6 +261,142 @@ export const autoEndExpiredBreaksByShiftDate = async ({ shift_date }) => {
     }
 
     return { success: true, updated: expiredUpdates.length };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const recordAttendanceByQr = async ({
+  rawValue,
+  actor,
+  expectedAuthId = null,
+} = {}) => {
+  try {
+    const parsed = parseAttendanceQrPayload(rawValue);
+    if (!parsed.success) {
+      throw new Error(parsed.error);
+    }
+
+    const employeeCode = parsed.employeeCode;
+    const nowIso = new Date().toISOString();
+    const shiftDate = new Date().toLocaleDateString("en-CA");
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("user_profiles")
+      .select("auth_id, first_name, last_name, email, role, employee_code")
+      .eq("employee_code", employeeCode)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    if (!profile?.auth_id) {
+      throw new Error("No employee account matches this QR code.");
+    }
+    if (profile.role !== "Employee") {
+      throw new Error("Only employee accounts can use attendance QR scanning.");
+    }
+    if (expectedAuthId && profile.auth_id !== expectedAuthId) {
+      throw new Error("This QR code does not belong to the signed-in employee.");
+    }
+
+    const { data: weeklyShift, error: weeklyShiftError } = await supabaseAdmin
+      .from("employee_weekly_shifts")
+      .select("employee_auth_id, week_start, week_end, shift_start_time, shift_end_time")
+      .eq("employee_auth_id", profile.auth_id)
+      .lte("week_start", shiftDate)
+      .gte("week_end", shiftDate)
+      .maybeSingle();
+
+    if (weeklyShiftError) throw weeklyShiftError;
+    if (!weeklyShift?.employee_auth_id) {
+      throw new Error("This employee has no assigned shift for today.");
+    }
+
+    const { data: existingEntry, error: entryError } = await supabaseAdmin
+      .from("time_entries")
+      .select("*")
+      .eq("auth_id", profile.auth_id)
+      .eq("shift_date", shiftDate)
+      .maybeSingle();
+
+    if (entryError) throw entryError;
+
+    if (!existingEntry?.clock_in_at) {
+      const { error: upsertError } = await supabaseAdmin.from("time_entries").upsert(
+        {
+          auth_id: profile.auth_id,
+          shift_date: shiftDate,
+          clock_in_at: nowIso,
+          clock_out_at: null,
+          overtime_start: null,
+          overtime_end: null,
+        },
+        { onConflict: "auth_id,shift_date" },
+      );
+
+      if (upsertError) throw upsertError;
+
+      await logAuditEvent({
+        eventType: "info",
+        module: "admin",
+        action: "qr_clock_in",
+        description: `Recorded QR clock-in for ${profile.email ?? profile.auth_id}.`,
+        actor,
+        target: {
+          auth_id: profile.auth_id,
+          email: profile.email,
+          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
+        },
+        metadata: {
+          employee_code: employeeCode,
+          clock_in_at: nowIso,
+        },
+      });
+
+      return {
+        success: true,
+        action: "clock_in",
+        employee: profile,
+        employeeCode,
+        scannedAt: nowIso,
+      };
+    }
+
+    if (existingEntry.clock_out_at) {
+      throw new Error("Attendance for this employee is already completed today.");
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from("time_entries")
+      .update({ clock_out_at: nowIso })
+      .eq("auth_id", profile.auth_id)
+      .eq("shift_date", shiftDate);
+
+    if (updateError) throw updateError;
+
+    await logAuditEvent({
+      eventType: "info",
+      module: "admin",
+      action: "qr_clock_out",
+      description: `Recorded QR clock-out for ${profile.email ?? profile.auth_id}.`,
+      actor,
+      target: {
+        auth_id: profile.auth_id,
+        email: profile.email,
+        name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
+      },
+      metadata: {
+        employee_code: employeeCode,
+        clock_out_at: nowIso,
+      },
+    });
+
+    return {
+      success: true,
+      action: "clock_out",
+      employee: profile,
+      employeeCode,
+      scannedAt: nowIso,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }

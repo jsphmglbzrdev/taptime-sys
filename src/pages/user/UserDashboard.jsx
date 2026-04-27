@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  ScanLine,
 } from "lucide-react";
 import Sidebar from "../../components/user/Sidebar";
 import Header from "../../components/user/Header";
@@ -27,6 +28,7 @@ import { toast } from "react-toastify";
 import ConfirmationBox from "../../components/ConfirmationBox";
 import MyLogsTab from "./tabs/MyLogsTab";
 import ProfileTab from "./tabs/ProfileTab";
+import QrAttendanceScannerPanel from "../../components/admin/QrAttendanceScannerPanel";
 import { logAuditEvent } from "../../utils/auditTrail";
 import { emitAvatarUpdated } from "../../utils/avatar";
 import {
@@ -88,6 +90,7 @@ export default function UserDashboard() {
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   const { user } = useAuth();
   const { addNotification } = useAppShell();
@@ -1575,6 +1578,30 @@ export default function UserDashboard() {
                   </div>
                 </div>
 
+                <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-orange-500 font-bold text-xs uppercase tracking-widest">
+                        Optional QR Attendance
+                      </p>
+                      <p className="mt-2 text-base font-black text-gray-800">
+                        Open the camera only when you need to scan.
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">
+                        Use your attendance QR from Profile as an alternative to the standard clock in/out button.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsQrScannerOpen(true)}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-orange-600"
+                    >
+                      <ScanLine size={18} />
+                      Open QR Scanner
+                    </button>
+                  </div>
+                </div>
+
                 {/* Break Schedule / Countdown */}
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1879,6 +1906,20 @@ export default function UserDashboard() {
         description={confirmModalCopy.description}
         buttonText="Confirm"
         handleAction={handleConfirmAction}
+      />
+
+      <QrAttendanceScannerPanel
+        mode="modal"
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        restrictToEmployeeCode
+        title="QR Clock In/Out"
+        description="Scan your own attendance QR as an optional way to clock in or clock out."
+        idleHint="Start the camera, then place your own attendance QR in front of the lens."
+        onAttendanceRecorded={async () => {
+          await Promise.all([fetchAttendance(), fetchWeeklyShift()]);
+          setIsQrScannerOpen(false);
+        }}
       />
     </div>
   );

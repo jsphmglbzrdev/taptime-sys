@@ -9,6 +9,7 @@ import {
   getEntryShiftTimes,
   formatShiftTimeLabel,
 } from "../../utils/shiftSchedule";
+import { formatRenderedHours } from "../../utils/timeMetrics";
 
 const TAB_TIME_LOGS = "time_logs";
 const TAB_SHIFT_HISTORY = "shift_history";
@@ -284,6 +285,8 @@ function EmployeeLogsModal({
                   <th className="px-6 py-3 font-bold">Clock Out</th>
                   <th className="px-6 py-3 font-bold">Overtime Start</th>
                   <th className="px-6 py-3 font-bold">Overtime End</th>
+                  <th className="px-6 py-3 font-bold">Hours Rendered</th>
+                  <th className="px-6 py-3 font-bold">Overtime Hours</th>
                   <th className="px-6 py-3 font-bold text-right">Status</th>
                 </tr>
               </thead>
@@ -352,6 +355,12 @@ function EmployeeLogsModal({
                       <td className="px-6 py-4 text-gray-500">
                         {formatTime(r.overtime_end)}
                       </td>
+                      <td className="px-6 py-4 text-gray-500">
+                        {formatRenderedHours(r.clock_in_at, r.clock_out_at)}
+                      </td>
+                      <td className="px-6 py-4 text-gray-500">
+                        {formatRenderedHours(r.overtime_start, r.overtime_end)}
+                      </td>
                       <td className="px-6 py-4 text-right">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
@@ -374,7 +383,7 @@ function EmployeeLogsModal({
                 {rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={15}
                       className="px-6 py-10 text-gray-400 text-sm font-medium"
                     >
                       No time logs found for this employee.

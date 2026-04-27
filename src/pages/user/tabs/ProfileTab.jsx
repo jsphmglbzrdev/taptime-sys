@@ -13,6 +13,7 @@ import {
 import AvatarEditorModal from "../../../components/AvatarEditorModal";
 import AvatarViewerModal from "../../../components/AvatarViewerModal";
 import ConfirmationBox from "../../../components/ConfirmationBox";
+import AttendanceQrCard from "../../../components/AttendanceQrCard";
 import { supabase } from "../../../utils/supabase";
 import { logAuditEvent } from "../../../utils/auditTrail";
 
@@ -309,6 +310,13 @@ export default function ProfileTab() {
           </div>
         </div>
       </div>
+
+      <AttendanceQrCard
+        employeeCode={profile?.employee_code}
+        qrSvg={profile?.attendance_qr_svg}
+        title="My Attendance QR"
+        description="Download this QR code and use it as an optional way to clock in and clock out."
+      />
 
       <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
         <h3 className="text-lg font-black text-gray-800">Update password</h3>

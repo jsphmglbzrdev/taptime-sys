@@ -1,4 +1,22 @@
-import { ToastContainer } from "react-toastify";
+import { ToastContainer, toast } from "react-toastify";
+
+const SINGLE_TOAST_PATCH_FLAG = "__singleToastPatched";
+const REPLACEABLE_TOAST_METHODS = ["success", "error", "info", "warning"];
+
+if (!toast[SINGLE_TOAST_PATCH_FLAG]) {
+  const dismissActiveToast = toast.dismiss.bind(toast);
+
+  REPLACEABLE_TOAST_METHODS.forEach((methodName) => {
+    const originalMethod = toast[methodName].bind(toast);
+
+    toast[methodName] = (...args) => {
+      dismissActiveToast();
+      return originalMethod(...args);
+    };
+  });
+
+  toast[SINGLE_TOAST_PATCH_FLAG] = true;
+}
 
 const OrangeToastContainer = () => {
   return (
@@ -58,6 +76,7 @@ const OrangeToastContainer = () => {
         autoClose={2000}
         hideProgressBar={false}
         newestOnTop={false}
+        limit={1}
         closeOnClick={false}
         rtl={false}
         pauseOnFocusLoss

@@ -26,6 +26,7 @@ import {
   isUnderTime,
 } from "../../../utils/shiftSchedule";
 import { supabase } from "../../../utils/supabase";
+import { formatRenderedHours } from "../../../utils/timeMetrics";
 
 function OverviewTab({ currentTime }) {
   const AUTO_REFRESH_SECONDS = 15;
@@ -334,6 +335,11 @@ function OverviewTab({ currentTime }) {
                 minute: "2-digit",
               })
             : "",
+          "Hours Rendered": formatRenderedHours(r.clock_in_at, r.clock_out_at),
+          "Overtime Hours": formatRenderedHours(
+            r.overtime_start,
+            r.overtime_end,
+          ),
           Status: statusLabel,
         };
       });

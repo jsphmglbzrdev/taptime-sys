@@ -1,6 +1,12 @@
 import { supabase } from "./supabase";
 import { createClient } from "@supabase/supabase-js";
 import { logAuditEvent } from "./auditTrail";
+import {
+  generateAttendanceQrSvg,
+  generateRandomEmployeeCode,
+  isValidEmployeeCode,
+  normalizeEmployeeCode,
+} from "./attendanceQr";
 
 const supabaseAdmin = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -87,14 +93,62 @@ export const createUser = async ({
   email,
   password,
   role,
+  employee_code,
   auditContext,
 }) => {
   try {
     const safeEmail = (email ?? "").trim();
     const safePassword = password ?? "";
+    const normalizedEmployeeCode = normalizeEmployeeCode(employee_code);
 
     if (!safeEmail) return { success: false, error: "Email is required" };
     if (!safePassword) return { success: false, error: "Password is required" };
+    if (employee_code && !isValidEmployeeCode(normalizedEmployeeCode)) {
+      return {
+        success: false,
+        error: "Employee ID must be exactly 7 digits.",
+      };
+    }
+
+    let resolvedEmployeeCode = normalizedEmployeeCode;
+    if (!resolvedEmployeeCode) {
+      for (let index = 0; index < 20; index += 1) {
+        const candidate = generateRandomEmployeeCode();
+        const { data: existingProfile, error: existingProfileError } =
+          await supabaseAdmin
+            .from("user_profiles")
+            .select("auth_id")
+            .eq("employee_code", candidate)
+            .maybeSingle();
+
+        if (existingProfileError) throw existingProfileError;
+        if (!existingProfile?.auth_id) {
+          resolvedEmployeeCode = candidate;
+          break;
+        }
+      }
+    } else {
+      const { data: existingProfile, error: existingProfileError } =
+        await supabaseAdmin
+          .from("user_profiles")
+          .select("auth_id")
+          .eq("employee_code", resolvedEmployeeCode)
+          .maybeSingle();
+
+      if (existingProfileError) throw existingProfileError;
+      if (existingProfile?.auth_id) {
+        return {
+          success: false,
+          error: "Employee ID already exists. Use a different 7-digit value.",
+        };
+      }
+    }
+
+    if (!resolvedEmployeeCode) {
+      throw new Error("Unable to generate a unique employee ID.");
+    }
+
+    const qrRecord = await generateAttendanceQrSvg(resolvedEmployeeCode);
 
     // 1. Create user without affecting current session
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
@@ -120,6 +174,9 @@ export const createUser = async ({
           last_name,
           email: safeEmail,
           role: role || "Employee",
+          employee_code: qrRecord.employeeCode,
+          attendance_qr_payload: qrRecord.payload,
+          attendance_qr_svg: qrRecord.svg,
         },
       ]);
     if (profileError) throw profileError;
@@ -135,10 +192,26 @@ export const createUser = async ({
         email: safeEmail,
         name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
       },
-      metadata: { role: role || "Employee" },
+      metadata: {
+        role: role || "Employee",
+        employee_code: qrRecord.employeeCode,
+      },
     });
 
-    return { success: true, user: data?.user ?? data };
+    return {
+      success: true,
+      user: data?.user ?? data,
+      profile: {
+        auth_id: authUserId,
+        first_name,
+        last_name,
+        email: safeEmail,
+        role: role || "Employee",
+        employee_code: qrRecord.employeeCode,
+        attendance_qr_payload: qrRecord.payload,
+        attendance_qr_svg: qrRecord.svg,
+      },
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
