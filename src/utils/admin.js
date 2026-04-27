@@ -361,42 +361,112 @@ export const recordAttendanceByQr = async ({
       };
     }
 
-    if (existingEntry.clock_out_at) {
-      throw new Error("Attendance for this employee is already completed today.");
+    if (!existingEntry.clock_out_at) {
+      const { error: updateError } = await supabaseAdmin
+        .from("time_entries")
+        .update({ clock_out_at: nowIso })
+        .eq("auth_id", profile.auth_id)
+        .eq("shift_date", shiftDate);
+
+      if (updateError) throw updateError;
+
+      await logAuditEvent({
+        eventType: "info",
+        module: "admin",
+        action: "qr_clock_out",
+        description: `Recorded QR clock-out for ${profile.email ?? profile.auth_id}.`,
+        actor,
+        target: {
+          auth_id: profile.auth_id,
+          email: profile.email,
+          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
+        },
+        metadata: {
+          employee_code: employeeCode,
+          clock_out_at: nowIso,
+        },
+      });
+
+      return {
+        success: true,
+        action: "clock_out",
+        employee: profile,
+        employeeCode,
+        scannedAt: nowIso,
+      };
     }
 
-    const { error: updateError } = await supabaseAdmin
-      .from("time_entries")
-      .update({ clock_out_at: nowIso })
-      .eq("auth_id", profile.auth_id)
-      .eq("shift_date", shiftDate);
+    if (!existingEntry.overtime_start) {
+      const { error: overtimeStartError } = await supabaseAdmin
+        .from("time_entries")
+        .update({ overtime_start: nowIso, overtime_end: null })
+        .eq("auth_id", profile.auth_id)
+        .eq("shift_date", shiftDate);
 
-    if (updateError) throw updateError;
+      if (overtimeStartError) throw overtimeStartError;
 
-    await logAuditEvent({
-      eventType: "info",
-      module: "admin",
-      action: "qr_clock_out",
-      description: `Recorded QR clock-out for ${profile.email ?? profile.auth_id}.`,
-      actor,
-      target: {
-        auth_id: profile.auth_id,
-        email: profile.email,
-        name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
-      },
-      metadata: {
-        employee_code: employeeCode,
-        clock_out_at: nowIso,
-      },
-    });
+      await logAuditEvent({
+        eventType: "info",
+        module: "admin",
+        action: "qr_overtime_start",
+        description: `Recorded QR overtime start for ${profile.email ?? profile.auth_id}.`,
+        actor,
+        target: {
+          auth_id: profile.auth_id,
+          email: profile.email,
+          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
+        },
+        metadata: {
+          employee_code: employeeCode,
+          overtime_start: nowIso,
+        },
+      });
 
-    return {
-      success: true,
-      action: "clock_out",
-      employee: profile,
-      employeeCode,
-      scannedAt: nowIso,
-    };
+      return {
+        success: true,
+        action: "overtime_start",
+        employee: profile,
+        employeeCode,
+        scannedAt: nowIso,
+      };
+    }
+
+    if (!existingEntry.overtime_end) {
+      const { error: overtimeEndError } = await supabaseAdmin
+        .from("time_entries")
+        .update({ overtime_end: nowIso })
+        .eq("auth_id", profile.auth_id)
+        .eq("shift_date", shiftDate);
+
+      if (overtimeEndError) throw overtimeEndError;
+
+      await logAuditEvent({
+        eventType: "info",
+        module: "admin",
+        action: "qr_overtime_end",
+        description: `Recorded QR overtime end for ${profile.email ?? profile.auth_id}.`,
+        actor,
+        target: {
+          auth_id: profile.auth_id,
+          email: profile.email,
+          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
+        },
+        metadata: {
+          employee_code: employeeCode,
+          overtime_end: nowIso,
+        },
+      });
+
+      return {
+        success: true,
+        action: "overtime_end",
+        employee: profile,
+        employeeCode,
+        scannedAt: nowIso,
+      };
+    }
+
+    throw new Error("Attendance and overtime for this employee are already completed today.");
   } catch (error) {
     return { success: false, error: error.message };
   }

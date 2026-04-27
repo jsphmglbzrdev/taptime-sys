@@ -1588,7 +1588,7 @@ export default function UserDashboard() {
                         Open the camera only when you need to scan.
                       </p>
                       <p className="mt-1 text-sm font-medium text-gray-500">
-                        Use your attendance QR from Profile as an alternative to the standard clock in/out button.
+                        Use your attendance QR from Profile as an alternative for clock in, clock out, overtime in, and overtime out.
                       </p>
                     </div>
                     <button
@@ -1913,8 +1913,8 @@ export default function UserDashboard() {
         isOpen={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
         restrictToEmployeeCode
-        title="QR Clock In/Out"
-        description="Scan your own attendance QR as an optional way to clock in or clock out."
+        title="QR Attendance"
+        description="Scan your own attendance QR for clock in, clock out, overtime in, or overtime out."
         idleHint="Start the camera, then place your own attendance QR in front of the lens."
         onAttendanceRecorded={async () => {
           await Promise.all([fetchAttendance(), fetchWeeklyShift()]);
