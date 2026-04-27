@@ -6,7 +6,7 @@ import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import logo from "/surf2sawa.png";
-
+import jk2l2_logo from "/JK2L2_Crown.png"
 export default function LoginForm({ onLogin }) {
   const { setLoading } = useLoading();
   const { user } = useAuth();
@@ -83,9 +83,12 @@ export default function LoginForm({ onLogin }) {
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all mx-auto">
         <div className="p-6 sm:p-8">
           <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
+            <div className="inline-flex items-center justify-center w-16 h-16  rounded-full mb-4">
               <img src={logo} alt="" />
+              <img src={jk2l2_logo} alt="" />
+
             </div>
+       
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Welcome Back</h2>
             <p className="text-gray-500 mt-2 text-sm sm:base">
               Please enter your details to sign in
@@ -158,6 +161,7 @@ export default function LoginForm({ onLogin }) {
         <div className="bg-orange-50 py-4 px-6 sm:px-8 text-center">
           <p className="text-xs text-orange-800 font-medium">
             Internal System Access Only
+            <div>{new Date().getFullYear()}</div>
           </p>
         </div>
       </div>
