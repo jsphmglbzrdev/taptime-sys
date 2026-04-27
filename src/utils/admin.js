@@ -1,5 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { logAuditEvent } from "./auditTrail";
+import {
+  generateAttendanceQrSvg,
+  isValidEmployeeCode,
+  normalizeEmployeeCode,
+} from "./attendanceQr";
 import { parseAttendanceQrPayload } from "./attendanceQr";
 
 const supabaseAdmin = createClient(
@@ -63,14 +68,75 @@ export const listUserProfiles = async () => {
   }
 };
 
-export const updateUserAccount = async ({ auth_id, first_name, last_name, password }) => {
+export const updateUserAccount = async ({
+  auth_id,
+  first_name,
+  last_name,
+  password,
+  employee_code,
+}) => {
   try {
     if (!auth_id) throw new Error("auth_id is required");
 
-    // 1) Update profile names
+    const normalizedEmployeeCode = normalizeEmployeeCode(employee_code);
+    if (normalizedEmployeeCode && !isValidEmployeeCode(normalizedEmployeeCode)) {
+      throw new Error("Employee ID must be exactly 7 digits.");
+    }
+
+    const { data: existingProfile, error: existingProfileError } = await supabaseAdmin
+      .from("user_profiles")
+      .select(
+        "auth_id, email, role, employee_code, attendance_qr_payload, attendance_qr_svg",
+      )
+      .eq("auth_id", auth_id)
+      .maybeSingle();
+
+    if (existingProfileError) throw existingProfileError;
+    if (!existingProfile?.auth_id) throw new Error("User profile not found.");
+
+    if (
+      normalizedEmployeeCode &&
+      normalizedEmployeeCode !== existingProfile.employee_code
+    ) {
+      const { data: duplicateProfile, error: duplicateProfileError } =
+        await supabaseAdmin
+          .from("user_profiles")
+          .select("auth_id")
+          .eq("employee_code", normalizedEmployeeCode)
+          .neq("auth_id", auth_id)
+          .maybeSingle();
+
+      if (duplicateProfileError) throw duplicateProfileError;
+      if (duplicateProfile?.auth_id) {
+        throw new Error(
+          "Employee ID already exists. Use a different 7-digit value.",
+        );
+      }
+    }
+
+    const shouldRefreshQr =
+      !!normalizedEmployeeCode &&
+      (!existingProfile.attendance_qr_svg ||
+        !existingProfile.attendance_qr_payload ||
+        normalizedEmployeeCode !== existingProfile.employee_code);
+
+    const qrRecord = shouldRefreshQr
+      ? await generateAttendanceQrSvg(normalizedEmployeeCode)
+      : null;
+
+    const profilePatch = {
+      first_name,
+      last_name,
+      employee_code: normalizedEmployeeCode || existingProfile.employee_code,
+      attendance_qr_payload:
+        qrRecord?.payload ?? existingProfile.attendance_qr_payload,
+      attendance_qr_svg: qrRecord?.svg ?? existingProfile.attendance_qr_svg,
+    };
+
+    // 1) Update profile details
     const { error: profileError } = await supabaseAdmin
       .from("user_profiles")
-      .update({ first_name, last_name })
+      .update(profilePatch)
       .eq("auth_id", auth_id);
 
     if (profileError) throw profileError;
@@ -188,7 +254,16 @@ export const clearAuditTrail = async () => {
       .not("id", "is", null);
 
     if (error) throw error;
-    return { success: true };
+    return {
+      success: true,
+      profile: {
+        ...existingProfile,
+        ...profilePatch,
+      },
+      qrCreated: !!qrRecord && !existingProfile.attendance_qr_svg,
+      qrUpdated:
+        !!qrRecord && normalizedEmployeeCode !== existingProfile.employee_code,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }

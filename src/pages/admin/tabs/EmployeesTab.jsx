@@ -105,7 +105,7 @@ function EmployeesTab() {
   );
 
   const handleSave = useCallback(
-    async ({ auth_id, first_name, last_name, password }) => {
+    async ({ auth_id, first_name, last_name, password, employee_code }) => {
       setLoading(true);
       try { 
         const res = await updateUserAccount({
@@ -113,6 +113,7 @@ function EmployeesTab() {
           first_name,
           last_name,
           password,
+          employee_code,
         });
         if (!res.success) {
           toast.error(res.error || "Failed to update account");
@@ -134,7 +135,12 @@ function EmployeesTab() {
             email: selected?.email ?? null,
             name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
           },
-          metadata: { password_changed: Boolean(password?.trim()) },
+          metadata: {
+            password_changed: Boolean(password?.trim()),
+            employee_code,
+            qr_created: res.qrCreated,
+            qr_updated: res.qrUpdated,
+          },
         });
         setIsEditOpen(false);
         setSelected(null);

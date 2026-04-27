@@ -1,6 +1,11 @@
 import { useMemo, useRef, useState } from "react";
-import { Eye, Trash2 } from "lucide-react";
+import { Eye, RefreshCw, ScanLine, Trash2 } from "lucide-react";
 import AttendanceQrCard from "../AttendanceQrCard";
+import {
+  EMPLOYEE_CODE_LENGTH,
+  generateRandomEmployeeCode,
+  normalizeEmployeeCode,
+} from "../../utils/attendanceQr";
 
 function EditEmployeeModal({
   isOpen,
@@ -17,6 +22,7 @@ function EditEmployeeModal({
   const [firstName, setFirstName] = useState(employee?.first_name ?? "");
   const [lastName, setLastName] = useState(employee?.last_name ?? "");
   const [password, setPassword] = useState("");
+  const [employeeCode, setEmployeeCode] = useState(employee?.employee_code ?? "");
   const avatarInputRef = useRef(null);
 
   const displayName =
@@ -138,6 +144,48 @@ function EditEmployeeModal({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                Employee ID / QR value
+              </label>
+              <div className="mt-2 flex gap-2">
+                <div className="relative flex-1">
+                  <ScanLine
+                    size={18}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern={`\\d{${EMPLOYEE_CODE_LENGTH}}`}
+                    maxLength={EMPLOYEE_CODE_LENGTH}
+                    placeholder="7-digit employee ID"
+                    className="w-full rounded-xl border border-gray-200 py-3 pl-11 pr-4 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                    value={employeeCode}
+                    onChange={(e) =>
+                      setEmployeeCode(normalizeEmployeeCode(e.target.value))
+                    }
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEmployeeCode(generateRandomEmployeeCode())}
+                  className="inline-flex shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-gray-500 transition-all hover:bg-gray-50 hover:text-orange-600"
+                  title={
+                    employee?.employee_code
+                      ? "Generate a new employee ID"
+                      : "Create employee ID"
+                  }
+                >
+                  <RefreshCw size={18} />
+                </button>
+              </div>
+              <p className="mt-2 text-xs font-medium text-gray-500">
+                {employee?.attendance_qr_svg
+                  ? "Updating this value will regenerate the attendance QR."
+                  : "Add or generate a 7-digit employee ID, then save to create the attendance QR."}
+              </p>
+            </div>
           </div>
 
             <AttendanceQrCard
@@ -166,6 +214,7 @@ function EditEmployeeModal({
                 first_name: firstName,
                 last_name: lastName,
                 password,
+                employee_code: employeeCode,
               })
             }
             className="w-full cursor-pointer px-4 py-3 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 transition-all"
