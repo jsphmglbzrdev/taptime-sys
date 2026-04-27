@@ -85,6 +85,32 @@ const ATTENDANCE_GUIDE_ITEMS = [
   },
 ];
 
+function playClockOutConfetti() {
+  const end = Date.now() + 4 * 1000;
+  const colors = ["#f97316", "#fb923c", "#fdba74", "#facc15", "#22c55e"];
+
+  (function frame() {
+    confetti({
+      particleCount: 3,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0 },
+      colors,
+    });
+    confetti({
+      particleCount: 3,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1 },
+      colors,
+    });
+
+    if (Date.now() < end) {
+      requestAnimationFrame(frame);
+    }
+  })();
+}
+
 export default function UserDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
@@ -448,6 +474,7 @@ export default function UserDashboard() {
   const hasOvertimeStart = !!todayEntry?.overtime_start;
   const hasOvertimeEnd = !!todayEntry?.overtime_end;
   const isOvertimeActive = hasOvertimeStart && !hasOvertimeEnd;
+  const isQrScannerDisabled = hasOvertimeStart && hasOvertimeEnd;
   const hasAssignedShift =
     !!weeklyShift?.shift_start_time && !!weeklyShift?.shift_end_time;
 
@@ -805,30 +832,7 @@ export default function UserDashboard() {
       });
       await fetchAttendance();
 
-      // "School's out" celebration with side cannons
-      const end = Date.now() + 4 * 1000;
-      const colors = ["#f97316", "#fb923c", "#fdba74", "#facc15", "#22c55e"];
-
-      (function frame() {
-        confetti({
-          particleCount: 3,
-          angle: 60,
-          spread: 55,
-          origin: { x: 0 },
-          colors: colors
-        });
-        confetti({
-          particleCount: 3,
-          angle: 120,
-          spread: 55,
-          origin: { x: 1 },
-          colors: colors
-        });
-
-        if (Date.now() < end) {
-          requestAnimationFrame(frame);
-        }
-      }());
+      playClockOutConfetti();
 
       toast.success("Clocked out.");
       await logAuditEvent({
@@ -1594,12 +1598,22 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setIsQrScannerOpen(true)}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-orange-600"
+                      disabled={isQrScannerDisabled}
+                      className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold transition-all ${
+                        isQrScannerDisabled
+                          ? "cursor-not-allowed bg-gray-200 text-gray-500"
+                          : "bg-orange-500 text-white hover:bg-orange-600"
+                      }`}
                     >
                       <ScanLine size={18} />
                       Open QR Scanner
                     </button>
                   </div>
+                  {isQrScannerDisabled && (
+                    <p className="text-xs font-bold text-gray-500">
+                      QR scanning is disabled because today&apos;s overtime is already completed.
+                    </p>
+                  )}
                 </div>
 
                 {/* Break Schedule / Countdown */}
@@ -1916,9 +1930,15 @@ export default function UserDashboard() {
         title="QR Attendance"
         description="Scan your own attendance QR for clock in, clock out, overtime in, or overtime out."
         idleHint="Start the camera, then place your own attendance QR in front of the lens."
-        onAttendanceRecorded={async () => {
+        disabled={isQrScannerDisabled}
+        disabledMessage="Today's QR attendance flow is complete because overtime has already ended."
+        onAttendanceRecorded={async (result) => {
           await Promise.all([fetchAttendance(), fetchWeeklyShift()]);
+          if (result?.action === "clock_out") {
+            playClockOutConfetti();
+          }
           setIsQrScannerOpen(false);
+
         }}
       />
     </div>

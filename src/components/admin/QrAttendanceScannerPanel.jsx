@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Scanner } from "@yudiel/react-qr-scanner";
 import {
   Camera,
@@ -41,11 +41,14 @@ export default function QrAttendanceScannerPanel({
   mode = "panel",
   isOpen = true,
   onClose = null,
+  disabled = false,
+  disabledMessage = "QR scanning is unavailable.",
 }) {
   const { user } = useAuth();
   const [isScannerActive, setIsScannerActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanSummary, setScanSummary] = useState(null);
+  const [scanHistory, setScanHistory] = useState([]);
   const lastScanRef = useRef({ rawValue: "", at: 0 });
 
   const actor = useMemo(
@@ -58,11 +61,44 @@ export default function QrAttendanceScannerPanel({
   );
 
   const showInlineHeading = mode !== "modal";
+  const todayKey = useMemo(
+    () => new Date().toLocaleDateString("en-CA"),
+    [isOpen],
+  );
+  const storageKey = useMemo(() => {
+    if (!restrictToEmployeeCode || !user?.id) return null;
+    return `qr-scan-history:${user.id}:${todayKey}`;
+  }, [restrictToEmployeeCode, todayKey, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof window === "undefined") return;
+    if (!storageKey) {
+      setScanHistory([]);
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      const safeHistory = Array.isArray(parsed) ? parsed : [];
+      setScanHistory(safeHistory);
+      setScanSummary(safeHistory[0] ?? null);
+    } catch {
+      setScanHistory([]);
+      setScanSummary(null);
+    }
+  }, [isOpen, storageKey]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    setIsScannerActive(false);
+  }, [disabled]);
 
   const handleScan = useCallback(
     async (detectedCodes) => {
       const rawValue = detectedCodes?.[0]?.rawValue ?? "";
-      if (!rawValue || isProcessing) return;
+      if (!rawValue || isProcessing || disabled) return;
 
       const nowMs = Date.now();
       if (
@@ -92,19 +128,35 @@ export default function QrAttendanceScannerPanel({
           result.employee?.auth_id ||
           "Employee";
 
-        setScanSummary({
+        const nextScan = {
           action: result.action,
           employeeCode: result.employeeCode,
           employeeName,
           scannedAt: result.scannedAt,
+        };
+        setScanSummary(nextScan);
+        setScanHistory((prev) => {
+          const nextHistory = [nextScan, ...prev].slice(0, 20);
+          if (storageKey && typeof window !== "undefined") {
+            window.localStorage.setItem(storageKey, JSON.stringify(nextHistory));
+          }
+          return nextHistory;
         });
         toast.success(`${employeeName} ${formatActionLabel(result.action).toLowerCase()} recorded via QR scan.`);
-        await onAttendanceRecorded?.();
+        await onAttendanceRecorded?.(result);
       } finally {
         setIsProcessing(false);
       }
     },
-    [actor, isProcessing, onAttendanceRecorded, restrictToEmployeeCode, user?.id],
+    [
+      actor,
+      disabled,
+      isProcessing,
+      onAttendanceRecorded,
+      restrictToEmployeeCode,
+      storageKey,
+      user?.id,
+    ],
   );
 
   const scannerBody = (
@@ -122,8 +174,11 @@ export default function QrAttendanceScannerPanel({
         <button
           type="button"
           onClick={() => setIsScannerActive((prev) => !prev)}
+          disabled={disabled}
           className={`inline-flex items-center justify-center gap-2 self-start rounded-xl px-4 py-2 text-sm font-bold transition-all ${
-            isScannerActive
+            disabled
+              ? "cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400"
+              : isScannerActive
               ? "border border-red-100 bg-red-50 text-red-600 hover:bg-red-100"
               : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
           }`}
@@ -135,7 +190,7 @@ export default function QrAttendanceScannerPanel({
 
       <div className="mt-4 grid items-start gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
         <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50">
-          {isScannerActive ? (
+          {isScannerActive && !disabled ? (
             <div className="relative mx-auto aspect-[4/3] min-h-[280px] w-full overflow-hidden bg-slate-950 sm:aspect-[1/1] sm:max-w-[30rem]">
               <div className="h-full w-full [&_*]:![transform:scaleX(-1)]">
                 <Scanner
@@ -165,10 +220,10 @@ export default function QrAttendanceScannerPanel({
             <div className="flex aspect-[4/3] min-h-[280px] flex-col items-center justify-center px-6 text-center sm:aspect-[1/1] sm:max-w-[30rem] sm:mx-auto">
               <ScanLine size={28} className="text-gray-300" />
               <p className="mt-3 text-sm font-bold text-gray-600">
-                Scanner is idle.
+                {disabled ? "Scanner is unavailable." : "Scanner is idle."}
               </p>
               <p className="mt-1 text-xs font-medium text-gray-400">
-                {idleHint}
+                {disabled ? disabledMessage : idleHint}
               </p>
             </div>
           )}
@@ -216,6 +271,33 @@ export default function QrAttendanceScannerPanel({
                   {formatScannedAt(scanSummary.scannedAt)}
                 </p>
               </div>
+              {scanHistory.length > 0 && (
+                <div className="border-t border-orange-100 pt-3">
+                  <p className="text-xs font-black uppercase tracking-widest text-gray-400">
+                    Today&apos;s QR History
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {scanHistory.map((entry, index) => (
+                      <div
+                        key={`${entry.scannedAt}-${entry.action}-${index}`}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-white px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-gray-800">
+                            {formatActionLabel(entry.action)}
+                          </p>
+                          <p className="truncate text-xs font-medium text-gray-400">
+                            {entry.employeeCode}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-xs font-bold text-gray-500">
+                          {formatScannedAt(entry.scannedAt)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="mt-4 rounded-xl border border-dashed border-orange-200 bg-white px-4 py-6 text-center">
@@ -223,7 +305,7 @@ export default function QrAttendanceScannerPanel({
                 No scan recorded yet.
               </p>
               <p className="mt-1 text-xs font-medium text-gray-400">
-                Successful scans will appear here with the attendance action taken.
+                Successful scans for today will appear here with the recorded QR log.
               </p>
             </div>
           )}
