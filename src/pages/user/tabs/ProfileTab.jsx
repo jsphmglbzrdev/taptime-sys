@@ -231,7 +231,7 @@ export default function ProfileTab() {
               <input
                 ref={avatarInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                 onChange={handleUploadAvatar}
                 disabled={isBusy}
                 className="hidden"

@@ -17,6 +17,11 @@ const supabaseAvatarAdmin = createClient(
 export const AVATAR_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 export const AVATAR_MAX_SIZE_LABEL = "5 MB";
 export const AVATAR_UPDATED_EVENT = "avatar-updated";
+const SUPPORTED_AVATAR_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 function isRemoteAvatarRef(avatarRef) {
   return /^https?:\/\//i.test(String(avatarRef ?? "").trim());
@@ -89,6 +94,9 @@ export function validateAvatarFile(file) {
   if (!file) return "Please choose an image file.";
   if (!file.type?.startsWith("image/")) {
     return "Please upload an image file.";
+  }
+  if (!SUPPORTED_AVATAR_MIME_TYPES.has(file.type)) {
+    return "Please upload a JPG, PNG, or WebP image. HEIC/HEIF files are not supported yet.";
   }
   if (file.size > AVATAR_MAX_SIZE_BYTES) {
     return `Profile pictures must be ${AVATAR_MAX_SIZE_LABEL} or smaller.`;
