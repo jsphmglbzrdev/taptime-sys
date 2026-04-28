@@ -2,7 +2,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { supabase } from "../utils/supabase";
-import { listNotificationAuditEvents } from "../utils/auditTrail";
 
 const AppShellContext = createContext(null);
 const STORAGE_KEY = "taptime-notifications-v1";
@@ -156,55 +155,6 @@ export function AppShellProvider({ children }) {
       cancelled = true;
     };
   }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id || !profile?.role) return undefined;
-
-    let cancelled = false;
-
-    const syncAuditNotifications = async () => {
-      const res = await listNotificationAuditEvents({
-        authId: user.id,
-        role: profile.role,
-        limit: MAX_NOTIFICATIONS,
-      });
-
-      if (!res.success || cancelled) return;
-
-      const hiddenSet = new Set(hiddenIds);
-      const readSet = new Set(readIds);
-      const auditNotifications = (res.data ?? [])
-        .filter((row) => !hiddenSet.has(String(row.id)))
-        .map((row) =>
-          normalizeNotification({
-            id: String(row.id),
-            title: String(row.action ?? row.module ?? "Notification")
-              .replace(/_/g, " ")
-              .replace(/\b\w/g, (char) => char.toUpperCase()),
-            message: row.description ?? "",
-            kind: row.module ?? "general",
-            createdAt: row.created_at,
-            read: readSet.has(String(row.id)),
-          }),
-        );
-
-      setNotifications((current) => {
-        const localOnly = current.filter((item) => String(item.id).startsWith("notif-"));
-        const merged = [...localOnly, ...auditNotifications]
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .slice(0, MAX_NOTIFICATIONS);
-        return merged;
-      });
-    };
-
-    syncAuditNotifications();
-    const pollId = window.setInterval(syncAuditNotifications, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(pollId);
-    };
-  }, [hiddenIds, profile?.role, readIds, user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

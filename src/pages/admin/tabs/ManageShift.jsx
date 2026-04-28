@@ -4,7 +4,6 @@ import { toast } from "react-toastify";
 import ConfirmationBox from "../../../components/ConfirmationBox";
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../../context/AuthContext";
-import { logAuditEvent } from "../../../utils/auditTrail";
 import ManageShiftModal from "../../../components/admin/ManageShiftModal";
 import ShiftHistoryModal from "../../../components/admin/ShiftHistoryModal";
 import {
@@ -214,48 +213,11 @@ export default function ManageShift() {
             .eq("id", prev.id);
           if (updateRes.error) throw updateRes.error;
 
-          const targetEmployee = employeesById.get(safePayload.employee_auth_id);
-          await logAuditEvent({
-            eventType: "info",
-            module: "admin",
-            action: "update_weekly_shift",
-            description: `Updated weekly shift for ${targetEmployee?.email ?? safePayload.employee_auth_id}.`,
-            actor: {
-              auth_id: user?.id,
-              email: user?.email,
-              role: "Admin",
-            },
-            target: {
-              auth_id: safePayload.employee_auth_id,
-              email: targetEmployee?.email,
-              name: formatEmployeeName(targetEmployee),
-            },
-            metadata: safePayload,
-          });
         } else {
           const insertRes = await supabase
             .from("employee_weekly_shifts")
             .insert(safePayload);
           if (insertRes.error) throw insertRes.error;
-
-          const targetEmployee = employeesById.get(safePayload.employee_auth_id);
-          await logAuditEvent({
-            eventType: "info",
-            module: "admin",
-            action: "create_weekly_shift",
-            description: `Created weekly shift for ${targetEmployee?.email ?? safePayload.employee_auth_id}.`,
-            actor: {
-              auth_id: user?.id,
-              email: user?.email,
-              role: "Admin",
-            },
-            target: {
-              auth_id: safePayload.employee_auth_id,
-              email: targetEmployee?.email,
-              name: formatEmployeeName(targetEmployee),
-            },
-            metadata: safePayload,
-          });
         }
 
         toast.success("Weekly shift saved.");
@@ -306,30 +268,6 @@ export default function ManageShift() {
           setIsManageShiftOpen(false);
           setPrefillShift(null);
         }
-
-        const targetEmployee = employeesById.get(row.employee_auth_id);
-        await logAuditEvent({
-          eventType: "warning",
-          module: "admin",
-          action: "delete_weekly_shift",
-          description: `Deleted weekly shift for ${targetEmployee?.email ?? row.employee_auth_id}.`,
-          actor: {
-            auth_id: user?.id,
-            email: user?.email,
-            role: "Admin",
-          },
-          target: {
-            auth_id: row.employee_auth_id,
-            email: targetEmployee?.email,
-            name: formatEmployeeName(targetEmployee),
-          },
-          metadata: {
-            week_start: row.week_start,
-            week_end: row.week_end,
-            shift_start_time: row.shift_start_time,
-            shift_end_time: row.shift_end_time,
-          },
-        });
 
         toast.success("Weekly shift deleted.");
         setPendingDeleteRow(null);

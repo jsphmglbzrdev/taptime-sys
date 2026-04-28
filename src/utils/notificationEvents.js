@@ -153,42 +153,6 @@ export function buildAdminAttendanceNotifications(payload, profileMap = new Map(
       kind: "attendance",
     },
     {
-      field: "morning_break_in_at",
-      title: "Morning break",
-      message: `${employeeLabel} started morning break.`,
-      kind: "break",
-    },
-    {
-      field: "morning_break_out_at",
-      title: "Morning break ended",
-      message: `${employeeLabel} ended morning break.`,
-      kind: "break",
-    },
-    {
-      field: "lunch_break_in_at",
-      title: "Lunch break",
-      message: `${employeeLabel} started lunch break.`,
-      kind: "break",
-    },
-    {
-      field: "lunch_break_out_at",
-      title: "Lunch break ended",
-      message: `${employeeLabel} ended lunch break.`,
-      kind: "break",
-    },
-    {
-      field: "afternoon_break_in_at",
-      title: "Afternoon break",
-      message: `${employeeLabel} started afternoon break.`,
-      kind: "break",
-    },
-    {
-      field: "afternoon_break_out_at",
-      title: "Afternoon break ended",
-      message: `${employeeLabel} ended afternoon break.`,
-      kind: "break",
-    },
-    {
       field: "overtime_start",
       title: "Overtime started",
       message: `${employeeLabel} started overtime.`,
@@ -213,6 +177,56 @@ export function buildAdminAttendanceNotifications(payload, profileMap = new Map(
         ),
       );
     }
+  }
+
+  if (
+    previousRow?.personal_break_last_started_at !==
+      nextRow?.personal_break_last_started_at &&
+    nextRow?.personal_break_last_started_at
+  ) {
+    const title = previousRow?.personal_break_started_at
+      ? "Personal break resumed"
+      : "Personal break started";
+    const message = previousRow?.personal_break_started_at
+      ? `${employeeLabel} resumed personal break.`
+      : `${employeeLabel} started personal break.`;
+    events.push(
+      buildTimeEvent(
+        title,
+        message,
+        "break",
+        `admin-personal-break-start-${authId}-${timestamp}`,
+      ),
+    );
+  }
+
+  if (
+    !previousRow?.personal_break_is_paused &&
+    nextRow?.personal_break_is_paused &&
+    Number(nextRow?.personal_break_remaining_seconds) > 0
+  ) {
+    events.push(
+      buildTimeEvent(
+        "Personal break paused",
+        `${employeeLabel} paused personal break.`,
+        "break",
+        `admin-personal-break-pause-${authId}-${timestamp}`,
+      ),
+    );
+  }
+
+  if (
+    Number(previousRow?.personal_break_remaining_seconds) > 0 &&
+    Number(nextRow?.personal_break_remaining_seconds) === 0
+  ) {
+    events.push(
+      buildTimeEvent(
+        "Personal break completed",
+        `${employeeLabel} used the full personal break.`,
+        "break",
+        `admin-personal-break-complete-${authId}-${timestamp}`,
+      ),
+    );
   }
 
   return events;

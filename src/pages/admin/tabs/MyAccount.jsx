@@ -17,7 +17,6 @@ import {
 import AvatarEditorModal from "../../../components/AvatarEditorModal";
 import AvatarViewerModal from "../../../components/AvatarViewerModal";
 import ConfirmationBox from "../../../components/ConfirmationBox";
-import { logAuditEvent } from "../../../utils/auditTrail";
 
 const MyAccount = () => {
   const { user } = useAuth();
@@ -105,24 +104,6 @@ const MyAccount = () => {
         return;
       }
       toast.success("Account updated");
-      await logAuditEvent({
-        eventType: "info",
-        module: "admin",
-        action: "update_admin_account",
-        description: `Updated admin account for ${profile?.email ?? user.id}.`,
-        actor: {
-          auth_id: user?.id,
-          email: profile?.email ?? user?.email,
-          name: `${firstName ?? ""} ${lastName ?? ""}`.trim(),
-          role: "Admin",
-        },
-        target: {
-          auth_id: user?.id,
-          email: profile?.email ?? user?.email,
-          name: `${firstName ?? ""} ${lastName ?? ""}`.trim(),
-        },
-        metadata: { password_changed: Boolean(password?.trim()) },
-      });
       setPassword("");
       await loadProfile();
     } finally {
@@ -166,18 +147,6 @@ const MyAccount = () => {
       setIsAvatarEditorOpen(false);
       setAvatarDraftFile(null);
       toast.success("Profile picture updated.");
-      await logAuditEvent({
-        eventType: "info",
-        module: "admin",
-        action: "update_admin_avatar",
-        description: `Updated admin profile picture for ${profile?.email ?? user?.email}.`,
-        actor: {
-          auth_id: user?.id,
-          email: profile?.email ?? user?.email,
-          name: displayName,
-          role: "Admin",
-        },
-      });
       await loadProfile();
       } catch (err) {
         toast.error(
@@ -205,18 +174,6 @@ const MyAccount = () => {
       setAvatarSrc("");
       setIsAvatarViewerOpen(false);
       toast.success("Profile picture removed.");
-      await logAuditEvent({
-        eventType: "warning",
-        module: "admin",
-        action: "delete_admin_avatar",
-        description: `Removed admin profile picture for ${profile?.email ?? user?.email}.`,
-        actor: {
-          auth_id: user?.id,
-          email: profile?.email ?? user?.email,
-          name: displayName,
-          role: "Admin",
-        },
-      });
       await loadProfile();
     } catch (err) {
       toast.error(err?.message ?? "Failed to remove profile picture.");
@@ -237,18 +194,6 @@ const MyAccount = () => {
         return;
       }
       toast.success("Account deleted");
-      await logAuditEvent({
-        eventType: "warning",
-        module: "admin",
-        action: "delete_admin_account",
-        description: `Deleted admin account for ${profile?.email ?? user?.email}.`,
-        actor: {
-          auth_id: profile?.auth_id ?? user?.id,
-          email: profile?.email ?? user?.email,
-          name: displayName,
-          role: "Admin",
-        },
-      });
       setIsDeleteOpen(false);
       await signOut();
       navigate("/login", { replace: true });

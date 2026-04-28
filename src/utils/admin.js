@@ -1,11 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
-import { logAuditEvent } from "./auditTrail";
 import {
   generateAttendanceQrSvg,
   isValidEmployeeCode,
   normalizeEmployeeCode,
 } from "./attendanceQr";
 import { parseAttendanceQrPayload } from "./attendanceQr";
+import {
+  appendPersonalBreakHistoryEvent,
+  getPersonalBreakState,
+  PERSONAL_BREAK_TOTAL_SECONDS,
+} from "./personalBreak";
 
 const supabaseAdmin = createClient(
 	import.meta.env.VITE_SUPABASE_URL,
@@ -205,70 +209,6 @@ export const listTimeEntriesByShiftDate = async ({ shift_date }) => {
   }
 };
 
-export const listAuditTrail = async () => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("audit_trails")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(500);
-
-    if (error) throw error;
-    return { success: true, data: data ?? [] };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
-export const listAuditTrailPage = async ({ page = 1, pageSize = 20 } = {}) => {
-  try {
-    const safePage = Math.max(1, Number(page) || 1);
-    const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 20));
-    const from = (safePage - 1) * safePageSize;
-    const to = from + safePageSize - 1;
-
-    const { data, error, count } = await supabaseAdmin
-      .from("audit_trails")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(from, to);
-
-    if (error) throw error;
-    return {
-      success: true,
-      data: data ?? [],
-      count: count ?? 0,
-      page: safePage,
-      pageSize: safePageSize,
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
-export const clearAuditTrail = async () => {
-  try {
-    const { error } = await supabaseAdmin
-      .from("audit_trails")
-      .delete()
-      .not("id", "is", null);
-
-    if (error) throw error;
-    return {
-      success: true,
-      profile: {
-        ...existingProfile,
-        ...profilePatch,
-      },
-      qrCreated: !!qrRecord && !existingProfile.attendance_qr_svg,
-      qrUpdated:
-        !!qrRecord && normalizedEmployeeCode !== existingProfile.employee_code,
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
 export const autoEndExpiredBreaksByShiftDate = async ({ shift_date }) => {
   try {
     if (!shift_date) throw new Error("shift_date is required");
@@ -276,47 +216,34 @@ export const autoEndExpiredBreaksByShiftDate = async ({ shift_date }) => {
     const { data, error } = await supabaseAdmin
       .from("time_entries")
       .select(
-        "auth_id, shift_date, morning_break_in_at, morning_break_out_at, afternoon_break_in_at, afternoon_break_out_at, lunch_break_in_at, lunch_break_out_at",
+        "auth_id, shift_date, personal_break_started_at, personal_break_last_started_at, personal_break_ended_at, personal_break_remaining_seconds, personal_break_is_paused, personal_break_history",
       )
       .eq("shift_date", shift_date);
 
     if (error) throw error;
 
-    const nowMs = Date.now();
     const expiredUpdates = [];
-    const breakConfigs = [
-      {
-        inKey: "morning_break_in_at",
-        outKey: "morning_break_out_at",
-        durationMs: 15 * 60 * 1000,
-      },
-      {
-        inKey: "afternoon_break_in_at",
-        outKey: "afternoon_break_out_at",
-        durationMs: 15 * 60 * 1000,
-      },
-      {
-        inKey: "lunch_break_in_at",
-        outKey: "lunch_break_out_at",
-        durationMs: 60 * 60 * 1000,
-      },
-    ];
 
     for (const entry of data ?? []) {
-      for (const cfg of breakConfigs) {
-        const breakInAt = entry?.[cfg.inKey];
-        const breakOutAt = entry?.[cfg.outKey];
-        if (!breakInAt || breakOutAt) continue;
-
-        const endMs = new Date(breakInAt).getTime() + cfg.durationMs;
-        if (Number.isNaN(endMs) || endMs > nowMs) continue;
-
+      const state = getPersonalBreakState(entry);
+      if (state.isRunning && state.remainingSeconds === 0) {
         expiredUpdates.push({
           auth_id: entry.auth_id,
           shift_date: entry.shift_date,
-          [cfg.outKey]: new Date(endMs).toISOString(),
+          personal_break_last_started_at: null,
+          personal_break_ended_at: new Date().toISOString(),
+          personal_break_remaining_seconds: 0,
+          personal_break_is_paused: false,
+          personal_break_history: appendPersonalBreakHistoryEvent(
+            entry?.personal_break_history,
+            {
+              type: "complete",
+              at: new Date().toISOString(),
+              remainingSeconds: 0,
+              note: "auto_end",
+            },
+          ),
         });
-        break;
       }
     }
 
@@ -343,7 +270,6 @@ export const autoEndExpiredBreaksByShiftDate = async ({ shift_date }) => {
 
 export const recordAttendanceByQr = async ({
   rawValue,
-  actor,
   expectedAuthId = null,
 } = {}) => {
   try {
@@ -402,6 +328,12 @@ export const recordAttendanceByQr = async ({
           shift_date: shiftDate,
           clock_in_at: nowIso,
           clock_out_at: null,
+          personal_break_started_at: null,
+          personal_break_last_started_at: null,
+          personal_break_ended_at: null,
+          personal_break_remaining_seconds: PERSONAL_BREAK_TOTAL_SECONDS,
+          personal_break_is_paused: false,
+          personal_break_history: [],
           overtime_start: null,
           overtime_end: null,
         },
@@ -409,23 +341,6 @@ export const recordAttendanceByQr = async ({
       );
 
       if (upsertError) throw upsertError;
-
-      await logAuditEvent({
-        eventType: "info",
-        module: "admin",
-        action: "qr_clock_in",
-        description: `Recorded QR clock-in for ${profile.email ?? profile.auth_id}.`,
-        actor,
-        target: {
-          auth_id: profile.auth_id,
-          email: profile.email,
-          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
-        },
-        metadata: {
-          employee_code: employeeCode,
-          clock_in_at: nowIso,
-        },
-      });
 
       return {
         success: true,
@@ -437,30 +352,31 @@ export const recordAttendanceByQr = async ({
     }
 
     if (!existingEntry.clock_out_at) {
+      const breakState = getPersonalBreakState(existingEntry, nowIso);
+      const breakPatch = breakState.isRunning
+        ? {
+            personal_break_last_started_at: null,
+            personal_break_ended_at: nowIso,
+            personal_break_remaining_seconds: breakState.remainingSeconds,
+            personal_break_is_paused: breakState.remainingSeconds > 0,
+            personal_break_history: appendPersonalBreakHistoryEvent(
+              existingEntry?.personal_break_history,
+              {
+                type: breakState.remainingSeconds === 0 ? "complete" : "pause",
+                at: nowIso,
+                remainingSeconds: breakState.remainingSeconds,
+                note: "qr_clock_out",
+              },
+            ),
+          }
+        : {};
       const { error: updateError } = await supabaseAdmin
         .from("time_entries")
-        .update({ clock_out_at: nowIso })
+        .update({ clock_out_at: nowIso, ...breakPatch })
         .eq("auth_id", profile.auth_id)
         .eq("shift_date", shiftDate);
 
       if (updateError) throw updateError;
-
-      await logAuditEvent({
-        eventType: "info",
-        module: "admin",
-        action: "qr_clock_out",
-        description: `Recorded QR clock-out for ${profile.email ?? profile.auth_id}.`,
-        actor,
-        target: {
-          auth_id: profile.auth_id,
-          email: profile.email,
-          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
-        },
-        metadata: {
-          employee_code: employeeCode,
-          clock_out_at: nowIso,
-        },
-      });
 
       return {
         success: true,
@@ -480,23 +396,6 @@ export const recordAttendanceByQr = async ({
 
       if (overtimeStartError) throw overtimeStartError;
 
-      await logAuditEvent({
-        eventType: "info",
-        module: "admin",
-        action: "qr_overtime_start",
-        description: `Recorded QR overtime start for ${profile.email ?? profile.auth_id}.`,
-        actor,
-        target: {
-          auth_id: profile.auth_id,
-          email: profile.email,
-          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
-        },
-        metadata: {
-          employee_code: employeeCode,
-          overtime_start: nowIso,
-        },
-      });
-
       return {
         success: true,
         action: "overtime_start",
@@ -514,23 +413,6 @@ export const recordAttendanceByQr = async ({
         .eq("shift_date", shiftDate);
 
       if (overtimeEndError) throw overtimeEndError;
-
-      await logAuditEvent({
-        eventType: "info",
-        module: "admin",
-        action: "qr_overtime_end",
-        description: `Recorded QR overtime end for ${profile.email ?? profile.auth_id}.`,
-        actor,
-        target: {
-          auth_id: profile.auth_id,
-          email: profile.email,
-          name: `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim(),
-        },
-        metadata: {
-          employee_code: employeeCode,
-          overtime_end: nowIso,
-        },
-      });
 
       return {
         success: true,

@@ -1,6 +1,6 @@
 # TapTime - Enterprise Attendance Monitoring System
 
-TapTime is a professional, real-time attendance monitoring solution designed for modern workplaces. Built with a focus on accuracy, compliance, and user experience, it streamlines the workforce management process through automated shift scheduling, real-time tracking, and comprehensive audit logging.
+TapTime is a professional, real-time attendance monitoring solution designed for modern workplaces. Built with a focus on accuracy, compliance, and user experience, it streamlines the workforce management process through automated shift scheduling and real-time tracking.
 
 ## 🚀 Features
 
@@ -16,7 +16,6 @@ TapTime is a professional, real-time attendance monitoring solution designed for
 - **Real-time Overview:** Live monitoring of employee attendance and active break statuses.
 - **Employee Management:** Full CRUD capabilities for managing staff profiles and system access.
 - **Flexible Shift Scheduling:** Assign and manage weekly shifts with support for varying schedules.
-- **Comprehensive Audit Trail:** Detailed logs of all system activities for accountability and security.
 - **Data Insights & Export:** Generate attendance reports and export data to Excel (XLSX) for payroll processing.
 
 ## 🛠️ Tech Stack
@@ -75,7 +74,7 @@ src/
    ```
 
 ## 🔒 Security & Compliance
-TapTime implements strict role-based access control (RBAC). Employees only have access to their own data and attendance tools, while administrative actions are protected and recorded in the system's tamper-evident audit trail.
+TapTime implements strict role-based access control (RBAC). Employees only have access to their own data and attendance tools, while administrative actions remain restricted to admins.
 
 ---
 *Developed with focus on efficiency and reliability.*

@@ -159,10 +159,10 @@ export default function LoginForm({ onLogin }) {
         </div>
 
         <div className="bg-orange-50 py-4 px-6 sm:px-8 text-center">
-          <p className="text-xs text-orange-800 font-medium">
-            Internal System Access Only
-            <div>{new Date().getFullYear()}</div>
-          </p>
+          <div className="text-xs text-orange-800 font-medium">
+            <p>Internal System Access Only</p>
+            <p>{new Date().getFullYear()}</p>
+          </div>
         </div>
       </div>
     </div>

@@ -1,715 +1,421 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  BookOpenText,
   CheckCircle2,
   Clock,
   Coffee,
+  PlayCircle,
   RefreshCw,
-  Sunset,
-  SunMedium,
   UserCheck,
-  UserRoundX,
 } from "lucide-react";
+import { toast } from "react-toastify";
 import {
   autoEndExpiredBreaksByShiftDate,
-  listTimeEntriesByAuthId,
   listTimeEntriesByShiftDate,
   listUserProfiles,
 } from "../../../utils/admin";
-import { useLoading } from "../../../context/LoadingContext";
-import { toast } from "react-toastify";
-import * as XLSX from "xlsx";
-import EmployeeLogsModal from "../../../components/admin/EmployeesLogModal";
-import {
-  getEntryShiftTimes,
-  isLate,
-  isUnderTime,
-} from "../../../utils/shiftSchedule";
 import { supabase } from "../../../utils/supabase";
-import { formatRenderedHours } from "../../../utils/timeMetrics";
+import {
+  formatPersonalBreakLogValue,
+  getPersonalBreakHistory,
+  getPersonalBreakState,
+} from "../../../utils/personalBreak";
+import {
+  formatShiftTimeLabel,
+  getEntryShiftTimes,
+} from "../../../utils/shiftSchedule";
 
-function OverviewTab({ currentTime }) {
-  const AUTO_REFRESH_SECONDS = 15;
-  const MORNING_BREAK_MIN = 15;
-  const AFTERNOON_BREAK_MIN = 15;
-  const LUNCH_BREAK_MIN = 60;
+function formatTime(value) {
+  if (!value) return "-";
+  const raw = String(value).trim();
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-  const { setLoading } = useLoading();
+function formatCountdown(totalSeconds) {
+  if (totalSeconds === null || totalSeconds === undefined) return "--:--";
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const minutes = String(Math.floor(safe / 60)).padStart(2, "0");
+  const seconds = String(safe % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function getScheduledShiftDisplay(entry, weeklyShift = null) {
+  if (entry?.scheduled_shift) return entry.scheduled_shift;
+  const { shiftStart, shiftEnd } = getEntryShiftTimes(entry ?? {}, weeklyShift);
+  if (!shiftStart || !shiftEnd) return "-";
+  return `${formatShiftTimeLabel(shiftStart)} - ${formatShiftTimeLabel(shiftEnd)}`;
+}
+
+function getTodayStatus(entry, nowMs) {
+  const hasClockIn = !!entry?.clock_in_at;
+  const hasClockOut = !!entry?.clock_out_at;
+  const hasOvertimeStart = !!entry?.overtime_start;
+  const hasOvertimeEnd = !!entry?.overtime_end;
+  const breakState = getPersonalBreakState(entry, nowMs);
+
+  if (hasOvertimeStart && hasOvertimeEnd) {
+    return {
+      label: "Completed with Overtime",
+      toneClass: "bg-green-50 text-green-700",
+    };
+  }
+  if (hasOvertimeStart && !hasOvertimeEnd) {
+    return { label: "Overtime", toneClass: "bg-orange-50 text-orange-700" };
+  }
+  if (breakState.isRunning) {
+    return { label: "Personal Break", toneClass: "bg-orange-50 text-orange-700" };
+  }
+  if (hasClockOut) {
+    return { label: "Shift Completed", toneClass: "bg-green-50 text-green-700" };
+  }
+  if (hasClockIn) {
+    return { label: "Working", toneClass: "bg-emerald-50 text-emerald-700" };
+  }
+  return { label: "Not started", toneClass: "bg-gray-100 text-gray-600" };
+}
+
+function BreakActivity({ entry }) {
+  const history = getPersonalBreakHistory(entry).slice(-3).reverse();
+
+  if (history.length === 0) {
+    return <span className="text-gray-400">No break activity</span>;
+  }
+
+  return (
+    <div className="space-y-1">
+      {history.map((item) => (
+        <div key={item.id} className="flex items-center justify-between gap-3">
+          <span className="text-xs font-bold text-gray-700">{item.label}</span>
+          <span className="text-xs font-medium text-gray-500">
+            {formatTime(item.at)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function getLatestBreakEvent(entry) {
+  const history = getPersonalBreakHistory(entry);
+  return history.length > 0 ? history[history.length - 1] : null;
+}
+
+function formatEmployeeName(employee) {
+  const label =
+    `${employee?.first_name ?? ""} ${employee?.last_name ?? ""}`.trim() ||
+    employee?.email ||
+    "Employee";
+  return label;
+}
+
+function BreakActivityModal({ isOpen, onClose, row }) {
+  if (!isOpen || !row) return null;
+
+  const label = formatEmployeeName(row.employee);
+  const history = getPersonalBreakHistory(row.entry).slice().reverse();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+      <div
+        className="fixed inset-0 bg-slate-900/30 backdrop-blur-md"
+        onClick={onClose}
+      />
+
+      <div className="relative flex h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl sm:h-[calc(100vh-3rem)]">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-orange-500">
+                Today&apos;s Break Activity
+              </p>
+              <h3 className="mt-2 text-2xl font-black tracking-tight text-gray-900">
+                {label}
+              </h3>
+              <p className="mt-1 text-sm font-medium text-gray-500">
+                {row.employee.email}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-600 transition-all hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4">
+              <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                Date
+              </p>
+              <p className="mt-2 text-base font-black text-gray-800">
+                {row.entry?.shift_date || "-"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4">
+              <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                Break Summary
+              </p>
+              <p className="mt-2 text-base font-black text-gray-800">
+                {formatPersonalBreakLogValue(row.entry)}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              Activity Timeline
+            </p>
+            {history.length === 0 ? (
+              <div className="mt-3 rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center text-sm font-medium text-gray-500">
+                No break activity recorded for today.
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {history.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-orange-100 bg-orange-50/60 px-4 py-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-orange-700 shadow-sm">
+                        {item.label}
+                      </span>
+                      <span className="text-xs font-bold text-gray-500">
+                        {formatTime(item.at)}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm font-medium text-gray-600">
+                      {item.remainingSeconds > 0
+                        ? `${Math.floor(item.remainingSeconds / 60)} min left`
+                        : "No time left"}
+                    </p>
+                    {item.note && (
+                      <p className="mt-1 text-xs font-bold uppercase tracking-wide text-gray-400">
+                        {item.note.replace(/_/g, " ")}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function OverviewTab({ currentTime, onOpenEmployeeLogs }) {
   const [employees, setEmployees] = useState([]);
-  const [avatarSrcByAuthId, setAvatarSrcByAuthId] = useState({});
   const [todayEntries, setTodayEntries] = useState([]);
-  const [activeLiveTab, setActiveLiveTab] = useState("all");
-  const [activeStatusTab, setActiveStatusTab] = useState("on-duty");
-  const [selected, setSelected] = useState(null);
-  const [isLogsOpen, setIsLogsOpen] = useState(false);
-  const [logs, setLogs] = useState([]);
-  const [isExporting, setIsExporting] = useState(false);
+  const [todayWeeklyShifts, setTodayWeeklyShifts] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [breakActivityTarget, setBreakActivityTarget] = useState(null);
+  const [isBreakActivityVisible, setIsBreakActivityVisible] = useState(true);
 
   const todayShiftDate = useMemo(
     () => currentTime.toLocaleDateString("en-CA"),
     [currentTime],
   );
 
-  const resolveAvatarSrc = useCallback(async (avatarRef) => {
-    const ref = String(avatarRef ?? "").trim();
-    if (!ref) return "";
-    if (/^https?:\/\//i.test(ref)) return ref;
-
-    const { data, error } = await supabase.storage
-      .from("avatars")
-      .createSignedUrl(ref, 60 * 60);
-    if (error) throw error;
-    return data?.signedUrl ?? "";
+  const loadEmployees = useCallback(async () => {
+    const res = await listUserProfiles();
+    if (!res.success) {
+      toast.error(res.error || "Failed to load employees.");
+      return;
+    }
+    setEmployees((res.data ?? []).filter((row) => row?.role === "Employee"));
   }, []);
 
-  const loadEmployees = useCallback(async ({ showSpinner = false } = {}) => {
-    if (showSpinner) {
-      setLoading(true);
-    }
-    try {
-      const res = await listUserProfiles();
-      if (!res.success) {
-        toast.error(res.error || "Failed to load employees");
-        return;
-      }
-      setEmployees((res.data ?? []).filter((u) => u?.role === "Employee"));
-    } finally {
-      if (showSpinner) {
-        setLoading(false);
-      }
-    }
-  }, [setLoading]);
-
-  useEffect(() => {
-    loadEmployees();
-  }, [loadEmployees]);
-
   const loadTodayEntries = useCallback(async () => {
-    try {
-      const autoEndRes = await autoEndExpiredBreaksByShiftDate({
-        shift_date: todayShiftDate,
+    const autoEndRes = await autoEndExpiredBreaksByShiftDate({
+      shift_date: todayShiftDate,
+    });
+    if (!autoEndRes.success) {
+      console.debug("[OverviewTab] failed to auto-end expired breaks", {
+        shiftDate: todayShiftDate,
+        error: autoEndRes.error,
       });
-      if (!autoEndRes.success) {
-        console.debug("[OverviewTab] failed to auto-end expired breaks", {
-          shiftDate: todayShiftDate,
-          error: autoEndRes.error,
-        });
-      }
-
-      const res = await listTimeEntriesByShiftDate({ shift_date: todayShiftDate });
-      if (!res.success) {
-        toast.error(res.error || "Failed to load live monitoring data");
-        return;
-      }
-      setTodayEntries(res.data ?? []);
-    } catch {
-      toast.error("Failed to load live monitoring data");
     }
+
+    const res = await listTimeEntriesByShiftDate({ shift_date: todayShiftDate });
+    if (!res.success) {
+      toast.error(res.error || "Failed to load today's monitoring data.");
+      return;
+    }
+    setTodayEntries(res.data ?? []);
   }, [todayShiftDate]);
 
-  useEffect(() => {
-    loadTodayEntries();
-  }, [loadTodayEntries]);
+  const loadTodayWeeklyShifts = useCallback(async () => {
+    const res = await supabase
+      .from("employee_weekly_shifts")
+      .select(
+        "employee_auth_id, week_start, week_end, shift_start_time, shift_end_time",
+      )
+      .lte("week_start", todayShiftDate)
+      .gte("week_end", todayShiftDate);
 
-  const refreshOverview = useCallback(async ({ silent = false, source = "manual" } = {}) => {
-    setIsRefreshing(true);
-    try {
-      await Promise.all([loadEmployees(), loadTodayEntries()]);
-      console.debug("[OverviewTab] refresh completed", {
-        source,
-        refreshedAt: new Date().toISOString(),
-      });
-      if (!silent) {
-        toast.success("Monitoring dashboard refreshed.");
-      }
-    } catch {
-      console.debug("[OverviewTab] refresh failed", {
-        source,
-        attemptedAt: new Date().toISOString(),
-      });
-      if (!silent) {
-        toast.error("Failed to refresh monitoring dashboard.");
-      }
-    } finally {
-      setIsRefreshing(false);
+    if (res.error) {
+      toast.error("Failed to load today's shift assignments.");
+      return;
     }
-  }, [loadEmployees, loadTodayEntries]);
+
+    setTodayWeeklyShifts(res.data ?? []);
+  }, [todayShiftDate]);
+
+  const refreshOverview = useCallback(
+    async ({ silent = false } = {}) => {
+      setIsRefreshing(true);
+      try {
+        await Promise.all([loadEmployees(), loadTodayEntries(), loadTodayWeeklyShifts()]);
+        if (!silent) {
+          toast.success("Overview refreshed.");
+        }
+      } catch {
+        if (!silent) {
+          toast.error("Failed to refresh overview.");
+        }
+      } finally {
+        setIsRefreshing(false);
+      }
+    },
+    [loadEmployees, loadTodayEntries, loadTodayWeeklyShifts],
+  );
+
+  useEffect(() => {
+    refreshOverview({ silent: true });
+  }, [refreshOverview]);
 
   useEffect(() => {
     const autoRefreshId = window.setInterval(() => {
-      refreshOverview({ silent: true, source: "auto-poll" });
-    }, AUTO_REFRESH_SECONDS * 1000);
+      refreshOverview({ silent: true });
+    }, 15000);
 
-    return () => {
-      window.clearInterval(autoRefreshId);
-    };
-  }, [AUTO_REFRESH_SECONDS, refreshOverview]);
+    return () => window.clearInterval(autoRefreshId);
+  }, [refreshOverview]);
 
   useEffect(() => {
-    const overviewChannel = supabase
+    const channel = supabase
       .channel("admin-overview-live")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "time_entries",
-        },
-        () => {
-          loadTodayEntries();
-        },
+        { event: "*", schema: "public", table: "time_entries" },
+        () => refreshOverview({ silent: true }),
       )
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "user_profiles",
-        },
-        () => {
-          loadEmployees();
-        },
+        { event: "*", schema: "public", table: "user_profiles" },
+        () => refreshOverview({ silent: true }),
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(overviewChannel);
+      supabase.removeChannel(channel);
     };
-  }, [loadEmployees, loadTodayEntries]);
+  }, [refreshOverview]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadAvatarSources = async () => {
-      const nextAvatarMap = {};
-
-      await Promise.all(
-        employees.map(async (emp) => {
-          try {
-            const url = await resolveAvatarSrc(emp?.avatar_url);
-            if (url) {
-              nextAvatarMap[emp.auth_id] = url;
-            }
-          } catch {
-            nextAvatarMap[emp.auth_id] = "";
-          }
-        }),
-      );
-
-      if (!cancelled) {
-        setAvatarSrcByAuthId(nextAvatarMap);
-      }
-    };
-
-    loadAvatarSources();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [employees, resolveAvatarSrc]);
-
-  const openEmployeeLogs = useCallback(
-    async (emp) => {
-      setSelected(emp);
-      setIsLogsOpen(true);
-      setLoading(true);
-      try {
-        const res = await listTimeEntriesByAuthId({ auth_id: emp.auth_id });
-        if (!res.success) {
-          toast.error(res.error || "Failed to load logs");
-          setLogs([]);
-          return;
-        }
-        setLogs(res.data ?? []);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [setLoading],
-  );
-
-  const exportSelectedExcel = useCallback(async () => {
-    if (!selected) return;
-    setIsExporting(true);
-    try {
-      const data = (logs ?? []).map((r) => {
-        const hasClockIn = !!r.clock_in_at;
-        const hasClockOut = !!r.clock_out_at;
-        const hasMorningIn = !!r.morning_break_in_at;
-        const hasMorningOut = !!r.morning_break_out_at;
-        const hasAfternoonIn = !!r.afternoon_break_in_at;
-        const hasAfternoonOut = !!r.afternoon_break_out_at;
-        const hasLunchIn = !!r.lunch_break_in_at;
-        const hasLunchOut = !!r.lunch_break_out_at;
-
-        const statusLabel = hasClockOut
-          ? "Shift Completed"
-          : hasMorningIn && !hasMorningOut
-            ? "Morning Break"
-            : hasAfternoonIn && !hasAfternoonOut
-              ? "Afternoon Break"
-              : hasLunchIn && !hasLunchOut
-                ? "Lunch Break"
-                : hasClockIn
-                  ? "Working"
-                  : "Not started";
-
-        const { shiftStart, shiftEnd } = getEntryShiftTimes(r);
-        const clockInTime = r.clock_in_at
-          ? new Date(r.clock_in_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "";
-        const clockOutTime = r.clock_out_at
-          ? new Date(r.clock_out_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "";
-
-        const considerLate = clockInTime
-          ? !!shiftStart && isLate(clockInTime, shiftStart, 5)
-          : false;
-        const considerUnderTime =
-          !!clockOutTime && !!shiftEnd && isUnderTime(clockOutTime, shiftEnd);
-
-        const clockInDisplay = clockInTime
-          ? `${clockInTime}${considerLate ? " - Late" : ""}`
-          : "";
-        const clockOutDisplay = clockOutTime
-          ? `${clockOutTime}${considerUnderTime ? " - Undertime" : ""}`
-          : "";
-
-        return {
-          Date: r.shift_date,
-          "Scheduled Time Shift": r.scheduled_shift || "-",
-          "Clock In": clockInDisplay,
-          "Morning Break Time (Time In)": r.morning_break_in_at
-            ? new Date(r.morning_break_in_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Morning Break Time (Time Out)": r.morning_break_out_at
-            ? new Date(r.morning_break_out_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Afternoon Break Time (Time In)": r.afternoon_break_in_at
-            ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Afternoon Break Time (Time Out)": r.afternoon_break_out_at
-            ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Lunch Break Time (Time In)": r.lunch_break_in_at
-            ? new Date(r.lunch_break_in_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Lunch Break Time (Time Out)": r.lunch_break_out_at
-            ? new Date(r.lunch_break_out_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Clock Out": clockOutDisplay,
-          "Overtime Start": r.overtime_start
-            ? new Date(r.overtime_start).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Overtime End": r.overtime_end
-            ? new Date(r.overtime_end).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Hours Rendered": formatRenderedHours(r.clock_in_at, r.clock_out_at),
-          "Overtime Hours": formatRenderedHours(
-            r.overtime_start,
-            r.overtime_end,
-          ),
-          Status: statusLabel,
-        };
-      });
-
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Employee Logs");
-
-      const safeName =
-        `${selected.first_name ?? ""} ${selected.last_name ?? ""}`
-          .trim()
-          .replace(/\s+/g, "-") || (selected.email ?? "employee");
-      XLSX.writeFile(
-        wb,
-        `employee-logs-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      );
-    } catch {
-      toast.error("Failed to export Excel.");
-    } finally {
-      setIsExporting(false);
-    }
-  }, [logs, selected]);
-
-  const employeeCards = useMemo(() => {
-    return employees.map((emp) => {
-      const name =
-        `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() || emp.email;
-      const avatarSrc = avatarSrcByAuthId[emp.auth_id] ?? "";
-      const initials = name
-        .split(" ")
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((p) => p[0])
-        .join("")
-        .toUpperCase();
-
-      return (
-        <button
-          key={emp.auth_id}
-          type="button"
-          onClick={() => openEmployeeLogs(emp)}
-          className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-all hover:shadow-md"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-4">
-              {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt={`${name} profile`}
-                  className="h-16 w-16 shrink-0 rounded-full border-2 border-orange-100 object-cover object-center"
-                />
-              ) : (
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50 text-xl font-black text-orange-500">
-                  {initials || "?"}
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-lg font-black text-gray-800">{name}</p>
-                <p className="truncate text-xs font-bold text-gray-400">{emp.email}</p>
-              </div>
-            </div>
-            <span className="shrink-0 rounded-lg bg-green-50 px-2 py-1 text-[10px] font-black text-green-600">
-              {String(emp.role ?? "Employee").toUpperCase()}
-            </span>
-          </div>
-          <div className="mt-4 text-[10px] font-black uppercase tracking-widest text-orange-500">
-            View time logs
-          </div>
-        </button>
-      );
-    });
-  }, [avatarSrcByAuthId, employees, openEmployeeLogs]);
-
-  const liveStatuses = useMemo(() => {
+  const rows = useMemo(() => {
     const nowMs = currentTime.getTime();
     const entryByAuthId = new Map(todayEntries.map((entry) => [entry.auth_id, entry]));
+    const shiftByAuthId = new Map(
+      todayWeeklyShifts.map((shift) => [shift.employee_auth_id, shift]),
+    );
 
-    return employees.map((emp) => {
-      const name =
-        `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() || emp.email;
-      const avatarSrc = avatarSrcByAuthId[emp.auth_id] ?? "";
-      const entry = entryByAuthId.get(emp.auth_id) ?? null;
-      const hasClockIn = !!entry?.clock_in_at;
-      const hasClockOut = !!entry?.clock_out_at;
-      const hasMorningIn = !!entry?.morning_break_in_at;
-      const hasMorningOut = !!entry?.morning_break_out_at;
-      const hasAfternoonIn = !!entry?.afternoon_break_in_at;
-      const hasAfternoonOut = !!entry?.afternoon_break_out_at;
-      const hasLunchIn = !!entry?.lunch_break_in_at;
-      const hasLunchOut = !!entry?.lunch_break_out_at;
-      const hasAnyBreakRecord =
-        hasMorningIn ||
-        hasMorningOut ||
-        hasLunchIn ||
-        hasLunchOut ||
-        hasAfternoonIn ||
-        hasAfternoonOut;
-
-      const getRemainingSeconds = (startAt, durationMin) => {
-        if (!startAt) return null;
-        const startMs = new Date(startAt).getTime();
-        const endMs = startMs + durationMin * 60 * 1000;
-        return Math.max(0, Math.ceil((endMs - nowMs) / 1000));
-      };
-
-      const getResolvedActiveStatus = () => {
-        if (hasClockOut) {
-          return {
-            statusKey: "completed",
-            statusLabel: "Shift Completed",
-            toneClass: "bg-green-50 text-green-700",
-            countdownSeconds: null,
-          };
-        }
-
-        if (hasClockIn) {
-          return {
-            statusKey: "working",
-            statusLabel: "Working",
-            toneClass: "bg-emerald-50 text-emerald-700",
-            countdownSeconds: null,
-          };
-        }
-
+    return employees
+      .map((employee) => {
+        const entry = entryByAuthId.get(employee.auth_id) ?? null;
+        const weeklyShift = shiftByAuthId.get(employee.auth_id) ?? null;
+        const breakState = getPersonalBreakState(entry, nowMs);
+        const status = getTodayStatus(entry, nowMs);
         return {
-          statusKey: "idle",
-          statusLabel: "Not started",
-          toneClass: "bg-gray-100 text-gray-600",
-          countdownSeconds: null,
+          employee,
+          entry,
+          weeklyShift,
+          breakState,
+          status,
         };
-      };
+      })
+      .sort((a, b) => {
+        const left =
+          `${a.employee.first_name ?? ""} ${a.employee.last_name ?? ""}`.trim() ||
+          a.employee.email ||
+          "";
+        const right =
+          `${b.employee.first_name ?? ""} ${b.employee.last_name ?? ""}`.trim() ||
+          b.employee.email ||
+          "";
+        return left.localeCompare(right);
+      });
+  }, [currentTime, employees, todayEntries, todayWeeklyShifts]);
 
-      let statusKey = "idle";
-      let statusLabel = "Not started";
-      let toneClass = "bg-gray-100 text-gray-600";
-      let countdownSeconds = null;
+  const summary = useMemo(() => {
+    const clockedIn = rows.filter((row) => !!row.entry?.clock_in_at).length;
+    const activeBreaks = rows.filter((row) => row.breakState.isRunning).length;
+    const completed = rows.filter((row) => !!row.entry?.clock_out_at).length;
 
-      if (hasMorningIn && !hasMorningOut) {
-        countdownSeconds = getRemainingSeconds(entry?.morning_break_in_at, MORNING_BREAK_MIN);
-        if (countdownSeconds <= 0) {
-          ({ statusKey, statusLabel, toneClass, countdownSeconds } =
-            getResolvedActiveStatus());
-        } else {
-          statusKey = "morning";
-          statusLabel = "Morning Break";
-          toneClass = "bg-amber-50 text-amber-700";
-        }
-      } else if (hasLunchIn && !hasLunchOut) {
-        countdownSeconds = getRemainingSeconds(entry?.lunch_break_in_at, LUNCH_BREAK_MIN);
-        if (countdownSeconds <= 0) {
-          ({ statusKey, statusLabel, toneClass, countdownSeconds } =
-            getResolvedActiveStatus());
-        } else {
-          statusKey = "lunch";
-          statusLabel = "Lunch Break";
-          toneClass = "bg-orange-50 text-orange-700";
-        }
-      } else if (hasAfternoonIn && !hasAfternoonOut) {
-        countdownSeconds = getRemainingSeconds(
-          entry?.afternoon_break_in_at,
-          AFTERNOON_BREAK_MIN,
-        );
-        if (countdownSeconds <= 0) {
-          ({ statusKey, statusLabel, toneClass, countdownSeconds } =
-            getResolvedActiveStatus());
-        } else {
-          statusKey = "afternoon";
-          statusLabel = "Afternoon Break";
-          toneClass = "bg-yellow-50 text-yellow-700";
-        }
-      } else if (hasClockOut) {
-        statusKey = "completed";
-        statusLabel = "Shift Completed";
-        toneClass = "bg-green-50 text-green-700";
-      } else if (hasClockIn) {
-        statusKey = "working";
-        statusLabel = "Working";
-        toneClass = "bg-emerald-50 text-emerald-700";
-      }
+    return {
+      scheduled: rows.length,
+      clockedIn,
+      activeBreaks,
+      completed,
+    };
+  }, [rows]);
 
-      return {
-        auth_id: emp.auth_id,
-        avatarSrc,
-        email: emp.email,
-        entry,
-        hasAnyBreakRecord,
-        name,
-        statusKey,
-        statusLabel,
-        toneClass,
-        countdownSeconds,
-      };
-    });
-  }, [
-    AFTERNOON_BREAK_MIN,
-    LUNCH_BREAK_MIN,
-    MORNING_BREAK_MIN,
-    avatarSrcByAuthId,
-    currentTime,
-    employees,
-    todayEntries,
-  ]);
+  const activeBreakRows = useMemo(
+    () => rows.filter((row) => row.breakState.isRunning),
+    [rows],
+  );
 
-  const formatCountdown = useCallback((totalSeconds) => {
-    if (totalSeconds === null || totalSeconds === undefined) return "--:--";
-    const safe = Math.max(0, totalSeconds);
-    const minutes = String(Math.floor(safe / 60)).padStart(2, "0");
-    const seconds = String(safe % 60).padStart(2, "0");
-    return `${minutes}:${seconds}`;
+  const breakActivityRows = useMemo(
+    () =>
+      rows
+        .map((row) => ({
+          ...row,
+          latestBreakEvent: getLatestBreakEvent(row.entry),
+        }))
+        .filter((row) => row.latestBreakEvent)
+        .sort(
+          (a, b) =>
+            new Date(b.latestBreakEvent.at).getTime() -
+            new Date(a.latestBreakEvent.at).getTime(),
+        ),
+    [rows],
+  );
+
+  const openBreakActivityView = useCallback((row) => {
+    setBreakActivityTarget(row);
   }, []);
 
-  const liveTabs = useMemo(
-    () => [
-      {
-        id: "all",
-        label: "All Breaks",
-        icon: Coffee,
-        count: liveStatuses.filter((item) =>
-          ["morning", "lunch", "afternoon"].includes(item.statusKey),
-        ).length,
-      },
-      {
-        id: "morning",
-        label: "Morning",
-        icon: SunMedium,
-        count: liveStatuses.filter((item) => item.statusKey === "morning").length,
-      },
-      {
-        id: "lunch",
-        label: "Lunch",
-        icon: Coffee,
-        count: liveStatuses.filter((item) => item.statusKey === "lunch").length,
-      },
-      {
-        id: "afternoon",
-        label: "Afternoon",
-        icon: Sunset,
-        count: liveStatuses.filter((item) => item.statusKey === "afternoon").length,
-      },
-    ],
-    [liveStatuses],
-  );
-
-  const liveBreakEmployees = useMemo(() => {
-    if (activeLiveTab === "all") {
-      return liveStatuses.filter((item) =>
-        ["morning", "lunch", "afternoon"].includes(item.statusKey),
-      );
-    }
-
-    return liveStatuses.filter((item) => item.statusKey === activeLiveTab);
-  }, [activeLiveTab, liveStatuses]);
-
-  const statusTabs = useMemo(
-    () => [
-      {
-        id: "on-duty",
-        label: "On Duty",
-        icon: UserCheck,
-        count: liveStatuses.filter((item) => item.statusKey === "working").length,
-      },
-      {
-        id: "completed",
-        label: "Completed",
-        icon: CheckCircle2,
-        count: liveStatuses.filter((item) => item.statusKey === "completed").length,
-      },
-      {
-        id: "not-break",
-        label: "Not Yet on Break",
-        icon: UserRoundX,
-        count: liveStatuses.filter(
-          (item) => item.statusKey === "working" && !item.hasAnyBreakRecord,
-        ).length,
-      },
-    ],
-    [liveStatuses],
-  );
-
-  const statusEmployees = useMemo(() => {
-    if (activeStatusTab === "completed") {
-      return liveStatuses.filter((item) => item.statusKey === "completed");
-    }
-
-    if (activeStatusTab === "not-break") {
-      return liveStatuses.filter(
-        (item) => item.statusKey === "working" && !item.hasAnyBreakRecord,
-      );
-    }
-
-    return liveStatuses.filter((item) => item.statusKey === "working");
-  }, [activeStatusTab, liveStatuses]);
-
-  const renderStatusCard = useCallback(
-    (emp, keyPrefix) => (
-      <button
-        key={`${keyPrefix}-${emp.auth_id}`}
-        type="button"
-        onClick={() =>
-          openEmployeeLogs(employees.find((item) => item.auth_id === emp.auth_id) ?? emp)
-        }
-        className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-gray-50/70 p-4 text-left transition-all hover:bg-white hover:shadow-sm"
-      >
-        {emp.avatarSrc ? (
-          <img
-            src={emp.avatarSrc}
-            alt={`${emp.name} profile`}
-            className="h-14 w-14 shrink-0 rounded-full border-2 border-orange-100 object-cover object-center"
-          />
-        ) : (
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-orange-100 bg-orange-50 font-black text-xl text-orange-500">
-            {emp.name
-              .split(" ")
-              .filter(Boolean)
-              .slice(0, 2)
-              .map((part) => part[0])
-              .join("")
-              .toUpperCase() || "?"}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <p className="truncate text-base font-black text-gray-800">{emp.name}</p>
-            <div className="shrink-0">
-              <span className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${emp.toneClass}`}>
-                {emp.statusLabel}
-              </span>
-              {emp.countdownSeconds !== null && emp.countdownSeconds > 0 && (
-                <p className="mt-1 text-right text-xs font-black tabular-nums text-orange-600">
-                  {formatCountdown(emp.countdownSeconds)}
-                </p>
-              )}
-            </div>
-          </div>
-          <p className="truncate text-xs font-medium text-gray-500">{emp.email}</p>
-        </div>
-      </button>
-    ),
-    [employees, formatCountdown, openEmployeeLogs],
-  );
-
   return (
-    <>
-      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-2xl font-black tracking-tight text-gray-800">
-            Monitoring Dashboard
+            Today&apos;s Overview
           </h2>
           <p className="text-sm font-medium text-gray-500">
-            Real-time status for{" "}
-            {currentTime.toLocaleDateString([], {
+            Live monitoring for {currentTime.toLocaleDateString([], {
               month: "long",
               day: "numeric",
               year: "numeric",
             })}
           </p>
         </div>
-        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
-          <button
-            type="button"
-            onClick={() => refreshOverview({ source: "manual" })}
-            disabled={isRefreshing}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
-            {isRefreshing ? "Refreshing..." : "Refresh"}
-          </button>
-          <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
             <Clock size={18} className="text-orange-500" />
-            <span className="text-lg font-bold tabular-nums">
+            <span className="text-lg font-bold tabular-nums text-gray-800">
               {currentTime.toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -717,158 +423,287 @@ function OverviewTab({ currentTime }) {
               })}
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => refreshOverview({ silent: false })}
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              Scheduled Today
+            </p>
+            <UserCheck size={18} className="text-orange-500" />
+          </div>
+          <p className="mt-3 text-3xl font-black text-gray-800">{summary.scheduled}</p>
+        </div>
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              Clocked In
+            </p>
+            <PlayCircle size={18} className="text-emerald-500" />
+          </div>
+          <p className="mt-3 text-3xl font-black text-gray-800">{summary.clockedIn}</p>
+        </div>
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              On Personal Break
+            </p>
+            <Coffee size={18} className="text-orange-500" />
+          </div>
+          <p className="mt-3 text-3xl font-black text-gray-800">{summary.activeBreaks}</p>
+        </div>
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              Completed
+            </p>
+            <CheckCircle2 size={18} className="text-green-500" />
+          </div>
+          <p className="mt-3 text-3xl font-black text-gray-800">{summary.completed}</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h3 className="text-lg font-black text-gray-800">Live Break Monitoring</h3>
+            <h3 className="text-lg font-black text-gray-800">Active Personal Breaks</h3>
             <p className="text-sm font-medium text-gray-500">
-              Employees currently taking a break as of{" "}
-              {currentTime.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
+              Employees currently on break with their live countdown and latest activity.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {activeBreakRows.map((row) => {
+            const label = formatEmployeeName(row.employee);
+
+            return (
+              <div
+                key={row.employee.auth_id}
+                className="rounded-2xl border border-orange-100 bg-orange-50/50 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-black text-gray-800">{label}</p>
+                    <p className="text-xs font-medium text-gray-500">{row.employee.email}</p>
+                  </div>
+                  <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-black text-orange-600 shadow-sm">
+                    {formatCountdown(row.breakState.remainingSeconds)}
+                  </span>
+                </div>
+                <div className="mt-4 rounded-xl bg-white px-3 py-3">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                    Break Activity
+                  </p>
+                  <div className="mt-2">
+                    <BreakActivity entry={row.entry} />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openBreakActivityView(row)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-white px-3 py-2 text-sm font-bold text-orange-600 transition-all hover:bg-orange-100"
+                >
+                  <BookOpenText size={16} />
+                  View Break Activity
+                </button>
+              </div>
+            );
+          })}
+
+          {activeBreakRows.length === 0 && (
+            <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
+              <Activity size={20} className="mx-auto text-gray-300" />
+              <p className="mt-3 text-sm font-bold text-gray-600">
+                No employees are on personal break right now.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-black text-gray-800">Break Activity</h3>
+              <p className="text-sm font-medium text-gray-500">
+                Separate personal-break activity feed for today.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBreakActivityVisible((current) => !current)}
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
+            >
+              {isBreakActivityVisible ? "Hide" : "Show"}
+            </button>
+          </div>
+        </div>
+
+        {isBreakActivityVisible && (
+          <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
+            {breakActivityRows.map((row) => {
+              const label = formatEmployeeName(row.employee);
+              return (
+                <div
+                  key={row.employee.auth_id}
+                  className="rounded-2xl border border-gray-100 bg-gradient-to-br from-white to-orange-50/40 p-4 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-black text-gray-800">{label}</p>
+                      <p className="text-xs font-medium text-gray-500">{row.employee.email}</p>
+                    </div>
+                    <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-black text-orange-700">
+                      {row.entry?.shift_date || "-"}
+                    </span>
+                  </div>
+                  <div className="mt-4 rounded-xl border border-orange-100 bg-white px-3 py-3">
+                    <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                      Latest Activity
+                    </p>
+                    <p className="mt-2 text-sm font-black text-gray-800">
+                      {row.latestBreakEvent.label}
+                    </p>
+                    <p className="mt-1 text-xs font-medium text-gray-500">
+                      {formatTime(row.latestBreakEvent.at)}
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-wide text-orange-600">
+                      {formatPersonalBreakLogValue(row.entry, currentTime)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openBreakActivityView(row)}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
+                  >
+                    <BookOpenText size={16} />
+                    View Break Activity
+                  </button>
+                </div>
+              );
+            })}
+
+            {breakActivityRows.length === 0 && (
+              <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-10 text-center text-sm font-medium text-gray-400">
+                No break activity recorded for today.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-4">
+          <h3 className="text-lg font-black text-gray-800">Today&apos;s Shift Board</h3>
+          <p className="text-sm font-medium text-gray-500">
+            A clear view of each employee&apos;s shift progress for today only.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px]">
+            <thead>
+              <tr className="bg-gray-50/60 text-left text-[10px] uppercase tracking-widest text-gray-400">
+                <th className="px-5 py-3 font-bold">Employee</th>
+                <th className="px-5 py-3 font-bold">Scheduled Shift</th>
+                <th className="px-5 py-3 font-bold">Clock In</th>
+                <th className="px-5 py-3 font-bold">Break Summary</th>
+                <th className="px-5 py-3 font-bold">Clock Out</th>
+                <th className="px-5 py-3 font-bold">Overtime</th>
+                <th className="px-5 py-3 font-bold">Status</th>
+                <th className="px-5 py-3 font-bold text-right">Logs</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map((row) => {
+                const label =
+                  `${row.employee.first_name ?? ""} ${row.employee.last_name ?? ""}`.trim() ||
+                  row.employee.email;
+
+                return (
+                  <tr key={row.employee.auth_id} className="align-top text-sm">
+                    <td className="px-5 py-4">
+                      <p className="font-black text-gray-800">{label}</p>
+                      <p className="mt-1 text-xs font-medium text-gray-500">
+                        {row.employee.email}
+                      </p>
+                    </td>
+                    <td className="px-5 py-4 text-gray-600">
+                      {getScheduledShiftDisplay(row.entry, row.weeklyShift)}
+                    </td>
+                    <td className="px-5 py-4 text-gray-600">
+                      {formatTime(row.entry?.clock_in_at)}
+                    </td>
+                    <td className="px-5 py-4 text-gray-600">
+                      <p>{formatPersonalBreakLogValue(row.entry, currentTime)}</p>
+                      {row.breakState.isRunning && (
+                        <p className="mt-1 text-xs font-black text-orange-600">
+                          {formatCountdown(row.breakState.remainingSeconds)} left
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-gray-600">
+                      {formatTime(row.entry?.clock_out_at)}
+                    </td>
+                    <td className="px-5 py-4 text-gray-600">
+                      {row.entry?.overtime_start || row.entry?.overtime_end
+                        ? `${formatTime(row.entry?.overtime_start)} - ${formatTime(row.entry?.overtime_end)}`
+                        : "-"}
+                    </td>
+                    <td className="px-5 py-4">
+                      <span
+                        className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-bold ${row.status.toneClass}`}
+                      >
+                        {row.status.label}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onOpenEmployeeLogs?.(row.employee.auth_id)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
+                      >
+                        <BookOpenText size={16} />
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                );
               })}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {liveTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeLiveTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveLiveTab(tab.id)}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition-all ${
-                    isActive
-                      ? "border-orange-200 bg-orange-50 text-orange-700"
-                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  <Icon size={16} />
-                  {tab.label}
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] ${
-                      isActive ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"
-                    }`}
+
+              {rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-5 py-10 text-center text-sm font-medium text-gray-400"
                   >
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {liveBreakEmployees.map((emp) => renderStatusCard(emp, "live"))}
-
-          {liveBreakEmployees.length === 0 && (
-            <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
-              <Activity size={20} className="mx-auto text-gray-300" />
-              <p className="mt-3 text-sm font-bold text-gray-600">
-                No employees are currently in this break status.
-              </p>
-              <p className="mt-1 text-xs font-medium text-gray-400">
-                This panel refreshes automatically every 15 seconds.
-              </p>
-            </div>
-          )}
+                    No employees available for today&apos;s overview.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h3 className="text-lg font-black text-gray-800">Duty Status</h3>
-            <p className="text-sm font-medium text-gray-500">
-              Employees grouped by active shift progress
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {statusTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeStatusTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveStatusTab(tab.id)}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition-all ${
-                    isActive
-                      ? "border-orange-200 bg-orange-50 text-orange-700"
-                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  <Icon size={16} />
-                  {tab.label}
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] ${
-                      isActive ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {statusEmployees.map((emp) => renderStatusCard(emp, activeStatusTab))}
-
-          {statusEmployees.length === 0 && (
-            <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
-              <Activity size={20} className="mx-auto text-gray-300" />
-              <p className="mt-3 text-sm font-bold text-gray-600">
-                No employees match this duty status.
-              </p>
-              <p className="mt-1 text-xs font-medium text-gray-400">
-                The list refreshes automatically every 15 seconds.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-black text-gray-800">Employees</h3>
-            <p className="text-sm font-medium text-gray-500">
-              Click an employee card to view full time logs
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {employeeCards}
-          {employees.length === 0 && (
-            <div className="rounded-2xl border border-gray-100 bg-white p-6 text-sm text-gray-500">
-              No employees found.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <EmployeeLogsModal
-        isOpen={isLogsOpen}
-        onClose={() => {
-          setIsLogsOpen(false);
-          setSelected(null);
-          setLogs([]);
-        }}
-        employee={selected}
-        rows={logs}
-        onExport={exportSelectedExcel}
-        isExporting={isExporting}
+      <BreakActivityModal
+        isOpen={!!breakActivityTarget}
+        onClose={() => setBreakActivityTarget(null)}
+        row={breakActivityTarget}
       />
-    </>
+    </div>
   );
 }
-
-export default OverviewTab;

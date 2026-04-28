@@ -1,19 +1,19 @@
+import { useState } from "react";
 import {
+  BookOpenText,
   LayoutDashboard,
-  Users,
   LogOut,
-  X,
-  User2,
-  Timer,
-  ScrollText,
   PanelLeftClose,
   PanelLeftOpen,
+  Timer,
+  User2,
+  Users,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import ConfirmationBox from "../ConfirmationBox";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
-import ConfirmationBox from "../ConfirmationBox";
-import { useNavigate } from "react-router-dom";
 import NavItem from "./NavItem";
 import jk2l2Logo from "/JK2L2_Crown.png";
 
@@ -30,9 +30,9 @@ export default function Sidebar({
 
   const menuItems = [
     { id: "Overview", icon: <LayoutDashboard size={20} />, label: "Overview" },
+    { id: "Employee Logs", icon: <BookOpenText size={20} />, label: "Employee Logs" },
     { id: "Employees", icon: <Users size={20} />, label: "Employees" },
     { id: "Manage Shift", icon: <Timer size={20} />, label: "Manage Shift" },
-    { id: "Audit Trail", icon: <ScrollText size={20} />, label: "Audit Trail" },
     { id: "My Account", icon: <User2 size={20} />, label: "My Account" },
   ];
 
@@ -76,11 +76,11 @@ export default function Sidebar({
                   isCollapsed ? "w-0 opacity-0" : "w-40 opacity-100"
                 }`}
               >
-                <p className="text-lg font-extrabold tracking-tight text-orange-500">
+                <p className="text-xl font-extrabold tracking-tight text-orange-500">
                   TapTime
                 </p>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
-                  JK2L2
+                  Admin
                 </p>
               </div>
             </div>
@@ -88,7 +88,7 @@ export default function Sidebar({
             <button
               type="button"
               onClick={() => setIsSidebarOpen(false)}
-              className="ml-2 text-gray-400 lg:hidden"
+              className="ml-2 text-gray-400 hover:text-gray-600 lg:hidden"
             >
               <X size={20} />
             </button>
@@ -136,11 +136,7 @@ export default function Sidebar({
                 title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 className="hidden shrink-0 rounded-xl border border-gray-200 p-3 text-gray-500 transition-all hover:bg-orange-50 hover:text-orange-600 lg:inline-flex"
               >
-                {isCollapsed ? (
-                  <PanelLeftOpen size={18} />
-                ) : (
-                  <PanelLeftClose size={18} />
-                )}
+                {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
               </button>
             </div>
           </div>

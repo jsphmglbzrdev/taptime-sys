@@ -3,10 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Header from "../../components/admin/Header";
 import Sidebar from "../../components/admin/Sidebar";
 import OverviewTab from "./tabs/OverviewTab";
+import EmployeeLogsTab from "./tabs/EmployeeLogsTab";
 import EmployeesTab from "./tabs/EmployeesTab";
 import MyAccount from "./tabs/MyAccount";
 import ManageShift from "./tabs/ManageShift";
-import AuditTrailTab from "./tabs/AuditTrailTab";
 import { listUserProfiles } from "../../utils/admin";
 import { supabase } from "../../utils/supabase";
 import {
@@ -19,6 +19,7 @@ import { useAppShell } from "../../context/AppShellContext";
 export default function AdminDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Overview");
+  const [logsTargetView, setLogsTargetView] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [employeeProfiles, setEmployeeProfiles] = useState([]);
   const attendanceSnapshotRef = useRef(new Map());
@@ -63,7 +64,7 @@ export default function AdminDashboard() {
         supabase
           .from("time_entries")
           .select(
-            "id, auth_id, shift_date, clock_in_at, clock_out_at, morning_break_in_at, morning_break_out_at, afternoon_break_in_at, afternoon_break_out_at, lunch_break_in_at, lunch_break_out_at, overtime_start, overtime_end",
+            "id, auth_id, shift_date, clock_in_at, clock_out_at, personal_break_started_at, personal_break_last_started_at, personal_break_ended_at, personal_break_remaining_seconds, personal_break_is_paused, overtime_start, overtime_end",
           )
           .eq("shift_date", todayShiftDate)
           .order("created_at", { ascending: false }),
@@ -238,11 +239,28 @@ export default function AdminDashboard() {
         <div className="flex-1 overflow-y-auto p-4 lg:p-8">
           <div className="max-w-6xl mx-auto space-y-6">
             {activeTab === "Overview" && (
-              <OverviewTab currentTime={currentTime} />
+              <OverviewTab
+                currentTime={currentTime}
+                onOpenEmployeeLogs={(view) => {
+                  if (typeof view === "string") {
+                    setLogsTargetView({ authId: view });
+                  } else {
+                    setLogsTargetView(view ?? null);
+                  }
+                  setActiveTab("Employee Logs");
+                }}
+              />
+            )}
+            {activeTab === "Employee Logs" && (
+              <EmployeeLogsTab
+                initialEmployeeAuthId={logsTargetView?.authId ?? null}
+                initialTab={logsTargetView?.tab ?? null}
+                initialShiftDate={logsTargetView?.shiftDate ?? null}
+                onConsumeInitialEmployeeAuthId={() => setLogsTargetView(null)}
+              />
             )}
             {activeTab === "Employees" && (<EmployeesTab />)}
             {activeTab === "Manage Shift" && (<ManageShift />)}
-            {activeTab === "Audit Trail" && (<AuditTrailTab />)}
             {activeTab === "My Account" && (<MyAccount />)}
           </div>
         </div>

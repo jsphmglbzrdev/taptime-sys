@@ -10,6 +10,7 @@ import {
   formatShiftTimeLabel,
 } from "../../utils/shiftSchedule";
 import { formatRenderedHours } from "../../utils/timeMetrics";
+import { formatPersonalBreakLogValue, getPersonalBreakState } from "../../utils/personalBreak";
 
 const TAB_TIME_LOGS = "time_logs";
 const TAB_SHIFT_HISTORY = "shift_history";
@@ -47,12 +48,7 @@ function sanitizeFilePart(label) {
 function calculateStatusWithColor(row) {
   const hasClockIn = !!row.clock_in_at;
   const hasClockOut = !!row.clock_out_at;
-  const hasMorningIn = !!row.morning_break_in_at;
-  const hasMorningOut = !!row.morning_break_out_at;
-  const hasAfternoonIn = !!row.afternoon_break_in_at;
-  const hasAfternoonOut = !!row.afternoon_break_out_at;
-  const hasLunchIn = !!row.lunch_break_in_at;
-  const hasLunchOut = !!row.lunch_break_out_at;
+  const personalBreakState = getPersonalBreakState(row);
   const hasOvertimeIn = !!row.overtime_start;
   const hasOvertimeOut = !!row.overtime_end;
   const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
@@ -69,14 +65,8 @@ function calculateStatusWithColor(row) {
   } else if (hasClockOut) {
     statusLabel = "Shift Completed";
     statusTone = "green";
-  } else if (hasMorningIn && !hasMorningOut) {
-    statusLabel = "Morning Break";
-    statusTone = "orange";
-  } else if (hasAfternoonIn && !hasAfternoonOut) {
-    statusLabel = "Afternoon Break";
-    statusTone = "orange";
-  } else if (hasLunchIn && !hasLunchOut) {
-    statusLabel = "Lunch Break";
+  } else if (personalBreakState.isRunning) {
+    statusLabel = "Personal Break";
     statusTone = "orange";
   } else if (hasClockIn) {
     statusLabel = "Working";
@@ -264,24 +254,7 @@ function EmployeeLogsModal({
                   <th className="px-6 py-3 font-bold">Date</th>
                   <th className="px-6 py-3 font-bold">Scheduled Time Shift</th>
                   <th className="px-6 py-3 font-bold">Clock In</th>
-                  <th className="px-6 py-3 font-bold">
-                    Morning Break Time (Time In)
-                  </th>
-                  <th className="px-6 py-3 font-bold">
-                    Morning Break Time (Time Out)
-                  </th>
-                  <th className="px-6 py-3 font-bold">
-                    Afternoon Break Time (Time In)
-                  </th>
-                  <th className="px-6 py-3 font-bold">
-                    Afternoon Break Time (Time Out)
-                  </th>
-                  <th className="px-6 py-3 font-bold">
-                    Lunch Break Time (Time In)
-                  </th>
-                  <th className="px-6 py-3 font-bold">
-                    Lunch Break Time (Time Out)
-                  </th>
+                  <th className="px-6 py-3 font-bold">Personal Break</th>
                   <th className="px-6 py-3 font-bold">Clock Out</th>
                   <th className="px-6 py-3 font-bold">Overtime Start</th>
                   <th className="px-6 py-3 font-bold">Overtime End</th>
@@ -324,22 +297,7 @@ function EmployeeLogsModal({
                         )}
                       </td>
                       <td className="px-6 py-4 text-gray-500">
-                        {formatTime(r.morning_break_in_at)}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {formatTime(r.morning_break_out_at)}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {formatTime(r.afternoon_break_in_at)}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {formatTime(r.afternoon_break_out_at)}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {formatTime(r.lunch_break_in_at)}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {formatTime(r.lunch_break_out_at)}
+                        {formatPersonalBreakLogValue(r)}
                       </td>
                       <td className="px-6 py-4 text-gray-500">
                         {formattedClockOut}{" "}
@@ -383,7 +341,7 @@ function EmployeeLogsModal({
                 {rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={15}
+                      colSpan={10}
                       className="px-6 py-10 text-gray-400 text-sm font-medium"
                     >
                       No time logs found for this employee.

@@ -70,9 +70,7 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
         >
           <Menu size={24} />
         </button>
-        <h1 className="text-lg font-bold text-gray-800 hidden sm:block">
-          Admin Portal — {activeTab}
-        </h1>
+     
       </div>
 
       <div className="flex items-center gap-4">

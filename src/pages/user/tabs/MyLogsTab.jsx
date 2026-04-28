@@ -16,6 +16,7 @@ import {
   isUnderTime,
 } from "../../../utils/shiftSchedule";
 import { formatRenderedHours } from "../../../utils/timeMetrics";
+import { formatPersonalBreakLogValue, getPersonalBreakState } from "../../../utils/personalBreak";
 
 const PAGE_SIZE = 10;
 
@@ -31,12 +32,7 @@ function formatTime(value) {
 function getRowStatusMeta(row, weeklyShift) {
   const hasClockIn = !!row.clock_in_at;
   const hasClockOut = !!row.clock_out_at;
-  const hasMorningIn = !!row.morning_break_in_at;
-  const hasMorningOut = !!row.morning_break_out_at;
-  const hasAfternoonIn = !!row.afternoon_break_in_at;
-  const hasAfternoonOut = !!row.afternoon_break_out_at;
-  const hasLunchIn = !!row.lunch_break_in_at;
-  const hasLunchOut = !!row.lunch_break_out_at;
+  const personalBreakState = getPersonalBreakState(row);
   const hasOvertimeIn = !!row.overtime_start;
   const hasOvertimeOut = !!row.overtime_end;
   const hasOvertimeActive = hasOvertimeIn && !hasOvertimeOut;
@@ -81,14 +77,8 @@ function getRowStatusMeta(row, weeklyShift) {
       label = "Shift Completed";
       tone = "green";
     }
-  } else if (hasMorningIn && !hasMorningOut) {
-    label = "Morning Break";
-    tone = "orange";
-  } else if (hasAfternoonIn && !hasAfternoonOut) {
-    label = "Afternoon Break";
-    tone = "orange";
-  } else if (hasLunchIn && !hasLunchOut) {
-    label = "Lunch Break";
+  } else if (personalBreakState.isRunning) {
+    label = "Personal Break";
     tone = "orange";
   } else if (hasClockIn) {
     label = isLateArrival ? "Working Late" : "Working";
@@ -130,12 +120,11 @@ export default function MyLogsTab() {
           id,
           shift_date,
           clock_in_at,
-          morning_break_in_at,
-          morning_break_out_at,
-          afternoon_break_in_at,
-          afternoon_break_out_at,
-          lunch_break_in_at,
-          lunch_break_out_at,
+          personal_break_started_at,
+          personal_break_last_started_at,
+          personal_break_ended_at,
+          personal_break_remaining_seconds,
+          personal_break_is_paused,
           clock_out_at,
 					scheduled_shift,
           overtime_start,
@@ -176,12 +165,11 @@ export default function MyLogsTab() {
           `
           shift_date,
           clock_in_at,
-          morning_break_in_at,
-          morning_break_out_at,
-          afternoon_break_in_at,
-          afternoon_break_out_at,
-          lunch_break_in_at,
-          lunch_break_out_at,
+          personal_break_started_at,
+          personal_break_last_started_at,
+          personal_break_ended_at,
+          personal_break_remaining_seconds,
+          personal_break_is_paused,
           clock_out_at,
 					scheduled_shift,
           overtime_start,
@@ -222,42 +210,7 @@ export default function MyLogsTab() {
           Date: r.shift_date,
           "Scheduled Time Shift": r.scheduled_shift,
           "Clock In": clockInDisplay,
-          "Morning Break Time (Time In)": r.morning_break_in_at
-            ? new Date(r.morning_break_in_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Morning Break Time (Time Out)": r.morning_break_out_at
-            ? new Date(r.morning_break_out_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Afternoon Break Time (Time In)": r.afternoon_break_in_at
-            ? new Date(r.afternoon_break_in_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Afternoon Break Time (Time Out)": r.afternoon_break_out_at
-            ? new Date(r.afternoon_break_out_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Lunch Break Time (Time In)": r.lunch_break_in_at
-            ? new Date(r.lunch_break_in_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
-          "Lunch Break Time (Time Out)": r.lunch_break_out_at
-            ? new Date(r.lunch_break_out_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
+          "Personal Break": formatPersonalBreakLogValue(r),
           "Clock Out": clockOutDisplay,
           "Overtime Start": r.overtime_start
             ? new Date(r.overtime_start).toLocaleTimeString([], {
@@ -348,24 +301,7 @@ export default function MyLogsTab() {
                 <th className="px-6 py-3 font-bold">Date</th>
                 <th className="px-6 py-3 font-bold">Scheduled Time Shift</th>
                 <th className="px-6 py-3 font-bold">Clock In</th>
-                <th className="px-6 py-3 font-bold">
-                  Morning Break Time (Time In)
-                </th>
-                <th className="px-6 py-3 font-bold">
-                  Morning Break Time (Time Out)
-                </th>
-                <th className="px-6 py-3 font-bold">
-                  Afternoon Break Time (Time In)
-                </th>
-                <th className="px-6 py-3 font-bold">
-                  Afternoon Break Time (Time Out)
-                </th>
-                <th className="px-6 py-3 font-bold">
-                  Lunch Break Time (Time In)
-                </th>
-                <th className="px-6 py-3 font-bold">
-                  Lunch Break Time (Time Out)
-                </th>
+                <th className="px-6 py-3 font-bold">Personal Break</th>
                 <th className="px-6 py-3 font-bold">Clock Out</th>
                 <th className="px-6 py-3 font-bold">Overtime Start</th>
                 <th className="px-6 py-3 font-bold">Overtime End</th>
@@ -396,22 +332,7 @@ export default function MyLogsTab() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.morning_break_in_at)}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.morning_break_out_at)}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.afternoon_break_in_at)}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.afternoon_break_out_at)}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.lunch_break_in_at)}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatTime(r.lunch_break_out_at)}
+                      {formatPersonalBreakLogValue(r)}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
                       {formatTime(r.clock_out_at)}{" "}
@@ -456,7 +377,7 @@ export default function MyLogsTab() {
                 <tr>
                   <td
                     className="px-6 py-8 text-gray-400 text-sm font-medium"
-                    colSpan={15}
+                    colSpan={10}
                   >
                     No logs found.
                   </td>

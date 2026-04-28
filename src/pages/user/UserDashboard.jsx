@@ -22,14 +22,12 @@ import Header from "../../components/user/Header";
 import { useAuth } from "../../context/AuthContext";
 import { useAppShell } from "../../context/AppShellContext";
 import { useLoading } from "../../context/LoadingContext";
-import { signOut } from "../../utils/auth";
 import { supabase } from "../../utils/supabase";
 import { toast } from "react-toastify";
 import ConfirmationBox from "../../components/ConfirmationBox";
 import MyLogsTab from "./tabs/MyLogsTab";
 import ProfileTab from "./tabs/ProfileTab";
 import QrAttendanceScannerPanel from "../../components/admin/QrAttendanceScannerPanel";
-import { logAuditEvent } from "../../utils/auditTrail";
 import { emitAvatarUpdated } from "../../utils/avatar";
 import {
   buildUserAccountNotification,
@@ -43,19 +41,15 @@ import {
   evaluateClockIn,
   formatShiftTimeLabel,
   getClockInWindow,
-  parseTimeToMinutes,
   formatDayRange,
 } from "../../utils/shiftSchedule";
-
-/** Local clock: when each break may be started (default schedule). */
-function getBreakStartWindowStatus(date = new Date()) {
-  const hour = date.getHours();
-  return {
-    canStartMorning: hour < 12,
-    canStartLunch: hour === 12,
-    canStartAfternoon: hour >= 13 && hour <= 17,
-  };
-}
+import {
+  appendPersonalBreakHistoryEvent,
+  formatPersonalBreakLogValue,
+  getPersonalBreakState,
+  PERSONAL_BREAK_TOTAL_MINUTES,
+  PERSONAL_BREAK_TOTAL_SECONDS,
+} from "../../utils/personalBreak";
 
 const ATTENDANCE_GUIDE_ITEMS = [
   {
@@ -71,12 +65,7 @@ const ATTENDANCE_GUIDE_ITEMS = [
   {
     title: "Break Time",
     description:
-      "Morning and afternoon breaks are 15 minutes each. If a break stays open too long, the system closes it automatically based on the break rules.",
-  },
-  {
-    title: "Lunch Break",
-    description:
-      "Lunch break is 60 minutes and is intended for the 12:00 PM to 1:00 PM window. Please end lunch on time so your attendance stays accurate.",
+      "You have one 60-minute personal break for the day. Start it, pause it, and resume it anytime while your shift is active until the countdown reaches zero.",
   },
   {
     title: "Overtime",
@@ -111,6 +100,18 @@ function playClockOutConfetti() {
   })();
 }
 
+function getErrorMessage(error, fallback) {
+  if (!error) return fallback;
+  if (typeof error === "string") return error;
+  if (typeof error.message === "string" && error.message.trim()) {
+    return error.message.trim();
+  }
+  if (typeof error.details === "string" && error.details.trim()) {
+    return error.details.trim();
+  }
+  return fallback;
+}
+
 export default function UserDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
@@ -126,11 +127,7 @@ export default function UserDashboard() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [confirmType, setConfirmType] = useState(null);
   const [weeklyShift, setWeeklyShift] = useState(null);
-  const autoEndedRef = useRef({
-    morning: false,
-    afternoon: false,
-    lunch: false,
-  });
+  const autoEndedRef = useRef(false);
   const profileNotificationSnapshotRef = useRef(null);
   const shiftNotificationSnapshotRef = useRef(null);
   const lastAutoResetKeyRef = useRef(null);
@@ -457,17 +454,6 @@ export default function UserDashboard() {
     [clockInWindow, currentTime],
   );
 
-  const MORNING_BREAK_MIN = 15;
-  const AFTERNOON_BREAK_MIN = 15;
-  const LUNCH_BREAK_MIN = 60;
-  /** After break allowance + this many minutes with no break-out, end break and sign out. */
-  const FORGOT_BREAK_SIGNOUT_AFTER_MIN = 15;
-
-  const breakStartWindows = useMemo(
-    () => getBreakStartWindowStatus(currentTime),
-    [currentTime],
-  );
-
   const isShiftActive = !!todayEntry?.clock_in_at && !todayEntry?.clock_out_at;
 
   const isShiftCompleted = !!todayEntry?.clock_out_at;
@@ -485,19 +471,12 @@ export default function UserDashboard() {
     return clockInEval.allowed;
   }, [clockInEval.allowed, hasAssignedShift, isShiftActive, isShiftCompleted]);
 
-  const isMorningBreakActive =
-    !!todayEntry?.morning_break_in_at && !todayEntry?.morning_break_out_at;
-  const isAfternoonBreakActive =
-    !!todayEntry?.afternoon_break_in_at && !todayEntry?.afternoon_break_out_at;
-  const isLunchBreakActive =
-    !!todayEntry?.lunch_break_in_at && !todayEntry?.lunch_break_out_at;
-
-  const isAnyBreakActive =
-    isMorningBreakActive || isAfternoonBreakActive || isLunchBreakActive;
-
-  const hasMorningBreak = !!todayEntry?.morning_break_in_at;
-  const hasAfternoonBreak = !!todayEntry?.afternoon_break_in_at;
-  const hasLunchBreak = !!todayEntry?.lunch_break_in_at;
+  const personalBreakState = useMemo(
+    () => getPersonalBreakState(todayEntry, currentTime),
+    [currentTime, todayEntry],
+  );
+  const isPersonalBreakActive = personalBreakState.isRunning;
+  const isAnyBreakActive = isPersonalBreakActive;
 
   const computedStatus = useMemo(() => {
     if (!todayEntry?.clock_in_at)
@@ -506,18 +485,13 @@ export default function UserDashboard() {
     if (hasOvertimeStart && hasOvertimeEnd)
       return { label: "Completed with Overtime", tone: "green" };
     if (todayEntry?.clock_out_at) return { label: "Completed", tone: "green" };
-    if (isMorningBreakActive) return { label: "Morning Break", tone: "orange" };
-    if (isAfternoonBreakActive)
-      return { label: "Afternoon Break", tone: "orange" };
-    if (isLunchBreakActive) return { label: "Lunch Break", tone: "orange" };
+    if (isPersonalBreakActive) return { label: "Personal Break", tone: "orange" };
     return { label: "Working", tone: "green" };
   }, [
     hasOvertimeEnd,
     hasOvertimeStart,
-    isAfternoonBreakActive,
-    isLunchBreakActive,
-    isMorningBreakActive,
     isOvertimeActive,
+    isPersonalBreakActive,
     todayEntry,
   ]);
 
@@ -575,25 +549,8 @@ export default function UserDashboard() {
         accent: isTodayUnderTime ? "Undertime" : null,
       },
       {
-        label: "Morning Break",
-        value:
-          todayEntry?.morning_break_in_at || todayEntry?.morning_break_out_at
-            ? `${formatTime(todayEntry?.morning_break_in_at)} - ${formatTime(todayEntry?.morning_break_out_at)}`
-            : "-",
-      },
-      {
-        label: "Lunch Break",
-        value:
-          todayEntry?.lunch_break_in_at || todayEntry?.lunch_break_out_at
-            ? `${formatTime(todayEntry?.lunch_break_in_at)} - ${formatTime(todayEntry?.lunch_break_out_at)}`
-            : "-",
-      },
-      {
-        label: "Afternoon Break",
-        value:
-          todayEntry?.afternoon_break_in_at || todayEntry?.afternoon_break_out_at
-            ? `${formatTime(todayEntry?.afternoon_break_in_at)} - ${formatTime(todayEntry?.afternoon_break_out_at)}`
-            : "-",
+        label: "Personal Break",
+        value: formatPersonalBreakLogValue(todayEntry, currentTime),
       },
       {
         label: "Overtime",
@@ -609,59 +566,20 @@ export default function UserDashboard() {
       isTodayUnderTime,
       todayClockInLabel,
       todayClockOutLabel,
-      todayEntry?.afternoon_break_in_at,
-      todayEntry?.afternoon_break_out_at,
-      todayEntry?.lunch_break_in_at,
-      todayEntry?.lunch_break_out_at,
-      todayEntry?.morning_break_in_at,
-      todayEntry?.morning_break_out_at,
       todayEntry?.overtime_end,
       todayEntry?.overtime_start,
+      currentTime,
     ],
   );
 
-  const auditActor = useMemo(
+  const countdown = useMemo(
     () => ({
-      auth_id: user?.id,
-      email: user?.email,
-      role: "Employee",
+      personalBreakRemainingSec: isPersonalBreakActive
+        ? personalBreakState.remainingSeconds
+        : null,
     }),
-    [user?.email, user?.id],
+    [isPersonalBreakActive, personalBreakState.remainingSeconds],
   );
-
-  const countdown = useMemo(() => {
-    const nowMs = currentTime.getTime();
-
-    const calcRemainingSec = (startAt, durationMin) => {
-      if (!startAt) return null;
-      const startMs = new Date(startAt).getTime();
-      const endMs = startMs + durationMin * 60 * 1000;
-      return Math.max(0, Math.floor((endMs - nowMs) / 1000));
-    };
-
-    const morningRemainingSec = isMorningBreakActive
-      ? calcRemainingSec(todayEntry?.morning_break_in_at, MORNING_BREAK_MIN)
-      : null;
-    const afternoonRemainingSec = isAfternoonBreakActive
-      ? calcRemainingSec(todayEntry?.afternoon_break_in_at, AFTERNOON_BREAK_MIN)
-      : null;
-    const lunchRemainingSec = isLunchBreakActive
-      ? calcRemainingSec(todayEntry?.lunch_break_in_at, LUNCH_BREAK_MIN)
-      : null;
-
-    return { morningRemainingSec, afternoonRemainingSec, lunchRemainingSec };
-  }, [
-    AFTERNOON_BREAK_MIN,
-    LUNCH_BREAK_MIN,
-    MORNING_BREAK_MIN,
-    currentTime,
-    isAfternoonBreakActive,
-    isLunchBreakActive,
-    isMorningBreakActive,
-    todayEntry?.afternoon_break_in_at,
-    todayEntry?.lunch_break_in_at,
-    todayEntry?.morning_break_in_at,
-  ]);
 
   const formatMMSS = useCallback((totalSeconds) => {
     if (totalSeconds === null || totalSeconds === undefined) return "--:--";
@@ -687,7 +605,6 @@ export default function UserDashboard() {
             const filled = idx < filledLines;
             return (
               <div
-                // eslint-disable-next-line react/no-array-index-key
                 key={idx}
                 className={
                   filled
@@ -712,7 +629,12 @@ export default function UserDashboard() {
         .update(patch)
         .eq("auth_id", user.id)
         .eq("shift_date", shiftDate);
-      if (error) throw error;
+      if (error) {
+        console.error("Failed updating time_entries", { shiftDate, patch, error });
+        throw new Error(
+          getErrorMessage(error, "Failed updating today's attendance record."),
+        );
+      }
     },
     [getShiftDate, user],
   );
@@ -779,12 +701,12 @@ export default function UserDashboard() {
           shift_date: shiftDate,
           scheduled_shift: weeklyShiftTime,
           clock_in_at: now,
-          morning_break_in_at: null,
-          morning_break_out_at: null,
-          afternoon_break_in_at: null,
-          afternoon_break_out_at: null,
-          lunch_break_in_at: null,
-          lunch_break_out_at: null,
+          personal_break_started_at: null,
+          personal_break_last_started_at: null,
+          personal_break_ended_at: null,
+          personal_break_remaining_seconds: PERSONAL_BREAK_TOTAL_SECONDS,
+          personal_break_is_paused: false,
+          personal_break_history: [],
           clock_out_at: null,
         },
         { onConflict: "auth_id,shift_date" },
@@ -797,16 +719,8 @@ export default function UserDashboard() {
       } else {
         toast.success("Clocked in.");
       }
-      await logAuditEvent({
-        eventType: ev.late ? "warning" : "info",
-        module: "user",
-        action: "clock_in",
-        description: `${user.email} clocked in${ev.late ? " late" : ""}.`,
-        actor: auditActor,
-        metadata: { shift_date: shiftDate, late: Boolean(ev.late) },
-      });
-    } catch (err) {
-      toast.error("Failed to clock in.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to clock in."));
     } finally {
       setLoading(false);
       setIsActionPending(false);
@@ -835,15 +749,7 @@ export default function UserDashboard() {
       playClockOutConfetti();
 
       toast.success("Clocked out.");
-      await logAuditEvent({
-        eventType: "info",
-        module: "user",
-        action: "clock_out",
-        description: `${user.email} clocked out.`,
-        actor: auditActor,
-        metadata: { clock_out_at: nowIso },
-      });
-    } catch (err) {
+    } catch {
       toast.error("Failed to clock out.");
     } finally {
       setLoading(false);
@@ -859,84 +765,56 @@ export default function UserDashboard() {
     weeklyShift,
   ]);
 
-  const startBreak = useCallback(
-    async (breakType) => {
-      if (!user) return;
-      if (!isShiftActive) return;
-      if (isAnyBreakActive) return;
+  const startPersonalBreak = useCallback(async () => {
+    const entry = todayEntryRef.current ?? todayEntry;
+    const now = new Date().toISOString();
+    const breakState = getPersonalBreakState(entry, now);
 
-      const windows = getBreakStartWindowStatus();
-      if (breakType === "morning") {
-        if (!windows.canStartMorning) {
-          toast.error(
-            "Morning break is only available before noon (12:00 PM).",
-          );
-          return;
-        }
-      } else if (breakType === "lunch") {
-        if (!windows.canStartLunch) {
-          toast.error(
-            "Lunch break is only available between 12:00 and 1:00 PM.",
-          );
-          return;
-        }
-      } else if (breakType === "afternoon") {
-        if (!windows.canStartAfternoon) {
-          toast.error(
-            "Afternoon break is only available between 1:00 and 5:00 PM.",
-          );
-          return;
-        }
-      }
+    if (!user || !isShiftActive || breakState.isRunning) return;
+    if (breakState.remainingSeconds <= 0) {
+      toast.info("Your 1-hour personal break has already been used.");
+      return;
+    }
 
-      const now = new Date().toISOString();
+    const patch = {
+      personal_break_started_at: entry?.personal_break_started_at ?? now,
+      personal_break_last_started_at: now,
+      personal_break_ended_at: null,
+      personal_break_remaining_seconds: breakState.remainingSeconds,
+      personal_break_is_paused: false,
+      personal_break_history: appendPersonalBreakHistoryEvent(
+        entry?.personal_break_history,
+        {
+          type: breakState.hasStarted ? "resume" : "start",
+          at: now,
+          remainingSeconds: breakState.remainingSeconds,
+        },
+      ),
+    };
 
-      let patch = {};
-      if (breakType === "morning") {
-        if (hasMorningBreak) return;
-        patch = { morning_break_in_at: now, morning_break_out_at: null };
-      } else if (breakType === "afternoon") {
-        if (hasAfternoonBreak) return;
-        patch = { afternoon_break_in_at: now, afternoon_break_out_at: null };
-      } else if (breakType === "lunch") {
-        if (hasLunchBreak) return;
-        patch = { lunch_break_in_at: now, lunch_break_out_at: null };
-      } else {
-        return;
-      }
-
-      setIsActionPending(true);
-      setLoading(true);
-      try {
-        await updateTodayEntry(patch);
-        await fetchAttendance();
-        toast.success("Break started.");
-        await logAuditEvent({
-          eventType: "info",
-          module: "user",
-          action: `${breakType}_break_start`,
-          description: `${user.email} started ${breakType} break.`,
-          actor: auditActor,
-        });
-      } catch (err) {
-        toast.error("Failed to start break.");
-      } finally {
-        setLoading(false);
-        setIsActionPending(false);
-      }
-    },
-    [
-      fetchAttendance,
-      hasAfternoonBreak,
-      hasLunchBreak,
-      hasMorningBreak,
-      isAnyBreakActive,
-      isShiftActive,
-      setLoading,
-      updateTodayEntry,
-      user,
-    ],
-  );
+    setIsActionPending(true);
+    setLoading(true);
+    try {
+      await updateTodayEntry(patch);
+      await fetchAttendance();
+      toast.success(
+        breakState.hasStarted ? "Personal break resumed." : "Personal break started.",
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to start personal break."));
+    } finally {
+      setLoading(false);
+      setIsActionPending(false);
+    }
+  }, [
+    fetchAttendance,
+    isShiftActive,
+    setLoading,
+    todayEntry,
+    todayEntry?.personal_break_started_at,
+    updateTodayEntry,
+    user,
+  ]);
 
   const startOvertime = useCallback(async () => {
     if (!user || !isShiftCompleted) return;
@@ -951,14 +829,7 @@ export default function UserDashboard() {
       });
       await fetchAttendance();
       toast.success("Overtime started.");
-      await logAuditEvent({
-        eventType: "info",
-        module: "user",
-        action: "overtime_start",
-        description: `${user.email} started overtime.`,
-        actor: auditActor,
-      });
-    } catch (err) {
+    } catch {
       toast.error("Failed to start overtime.");
     } finally {
       setLoading(false);
@@ -978,14 +849,7 @@ export default function UserDashboard() {
       });
       await fetchAttendance();
       toast.success("Overtime ended.");
-      await logAuditEvent({
-        eventType: "info",
-        module: "user",
-        action: "overtime_end",
-        description: `${user.email} ended overtime.`,
-        actor: auditActor,
-      });
-    } catch (err) {
+    } catch {
       toast.error("Failed to end overtime.");
     } finally {
       setLoading(false);
@@ -993,42 +857,43 @@ export default function UserDashboard() {
     }
   }, [fetchAttendance, isOvertimeActive, setLoading, updateTodayEntry, user]);
 
-  const endBreak = useCallback(
-    async (breakType, { silent = false } = {}) => {
-      if (!user) return;
-      if (!isShiftActive) return;
+  const pausePersonalBreak = useCallback(
+    async ({ silent = false, completed = false } = {}) => {
+      const entry = todayEntryRef.current ?? todayEntry;
+      const now = new Date().toISOString();
+      const breakState = getPersonalBreakState(entry, now);
 
-      let isActive = false;
-      let patch = {};
-      if (breakType === "morning") {
-        isActive = isMorningBreakActive;
-        patch = { morning_break_out_at: new Date().toISOString() };
-      } else if (breakType === "afternoon") {
-        isActive = isAfternoonBreakActive;
-        patch = { afternoon_break_out_at: new Date().toISOString() };
-      } else if (breakType === "lunch") {
-        isActive = isLunchBreakActive;
-        patch = { lunch_break_out_at: new Date().toISOString() };
-      }
+      if (!user || !isShiftActive || !breakState.isRunning) return;
 
-      if (!isActive) return;
+      const didComplete = completed || breakState.remainingSeconds === 0;
+      const patch = {
+        personal_break_last_started_at: null,
+        personal_break_ended_at: now,
+        personal_break_remaining_seconds: breakState.remainingSeconds,
+        personal_break_is_paused: !didComplete && breakState.remainingSeconds > 0,
+        personal_break_history: appendPersonalBreakHistoryEvent(
+          entry?.personal_break_history,
+          {
+            type: didComplete ? "complete" : "pause",
+            at: now,
+            remainingSeconds: breakState.remainingSeconds,
+            note: silent ? "automatic" : "",
+          },
+        ),
+      };
 
       setIsActionPending(true);
       setLoading(true);
       try {
         await updateTodayEntry(patch);
         await fetchAttendance();
-        if (!silent) toast.success("Break ended.");
-        await logAuditEvent({
-          eventType: silent ? "warning" : "info",
-          module: "user",
-          action: `${breakType}_break_end`,
-          description: `${user.email} ${silent ? "automatically ended" : "ended"} ${breakType} break.`,
-          actor: auditActor,
-          metadata: { automatic: silent },
-        });
-      } catch (err) {
-        toast.error("Failed to end break.");
+        if (!silent) {
+          toast.success(
+            didComplete ? "Personal break completed." : "Personal break paused.",
+          );
+        }
+      } catch (error) {
+        toast.error(getErrorMessage(error, "Failed to pause personal break."));
       } finally {
         setLoading(false);
         setIsActionPending(false);
@@ -1036,11 +901,9 @@ export default function UserDashboard() {
     },
     [
       fetchAttendance,
-      isAfternoonBreakActive,
-      isLunchBreakActive,
-      isMorningBreakActive,
       isShiftActive,
       setLoading,
+      todayEntry,
       updateTodayEntry,
       user,
     ],
@@ -1053,7 +916,7 @@ export default function UserDashboard() {
       `${todayEntry?.auth_id ?? ""}-${todayEntry?.shift_date ?? ""}`;
     if (!key) return;
     if (lastAutoResetKeyRef.current !== key) {
-      autoEndedRef.current = { morning: false, afternoon: false, lunch: false };
+      autoEndedRef.current = false;
       lastAutoResetKeyRef.current = key;
     }
   }, [todayEntry?.id, todayEntry?.shift_date, todayEntry?.auth_id]);
@@ -1063,126 +926,20 @@ export default function UserDashboard() {
     if (isActionPending) return;
 
     if (
-      isMorningBreakActive &&
-      countdown.morningRemainingSec === 0 &&
-      !autoEndedRef.current.morning
+      isPersonalBreakActive &&
+      countdown.personalBreakRemainingSec === 0 &&
+      !autoEndedRef.current
     ) {
-      autoEndedRef.current.morning = true;
-      endBreak("morning", { silent: true });
-    }
-    if (
-      isAfternoonBreakActive &&
-      countdown.afternoonRemainingSec === 0 &&
-      !autoEndedRef.current.afternoon
-    ) {
-      autoEndedRef.current.afternoon = true;
-      endBreak("afternoon", { silent: true });
-    }
-    if (
-      isLunchBreakActive &&
-      countdown.lunchRemainingSec === 0 &&
-      !autoEndedRef.current.lunch
-    ) {
-      autoEndedRef.current.lunch = true;
-      endBreak("lunch", { silent: true });
+      autoEndedRef.current = true;
+      pausePersonalBreak({ silent: true, completed: true });
     }
   }, [
-    countdown.afternoonRemainingSec,
-    countdown.lunchRemainingSec,
-    countdown.morningRemainingSec,
-    endBreak,
+    countdown.personalBreakRemainingSec,
     isActionPending,
-    isAfternoonBreakActive,
-    isLunchBreakActive,
-    isMorningBreakActive,
+    isPersonalBreakActive,
+    pausePersonalBreak,
   ]);
 
-  // If break-out is never recorded after allowance + grace, close break and sign out
-  useEffect(() => {
-    if (!user) return;
-
-    const graceMs = FORGOT_BREAK_SIGNOUT_AFTER_MIN * 60 * 1000;
-    const configs = [
-      {
-        active: isMorningBreakActive,
-        breakInAt: todayEntry?.morning_break_in_at,
-        durationMin: MORNING_BREAK_MIN,
-        verify: (e, breakIn) =>
-          e?.morning_break_in_at === breakIn && !e?.morning_break_out_at,
-        patch: () => ({
-          morning_break_out_at: new Date().toISOString(),
-        }),
-        toastMsg:
-          "Signed out: morning break was left open past the allowed time plus 15 minutes.",
-      },
-      {
-        active: isAfternoonBreakActive,
-        breakInAt: todayEntry?.afternoon_break_in_at,
-        durationMin: AFTERNOON_BREAK_MIN,
-        verify: (e, breakIn) =>
-          e?.afternoon_break_in_at === breakIn && !e?.afternoon_break_out_at,
-        patch: () => ({
-          afternoon_break_out_at: new Date().toISOString(),
-        }),
-        toastMsg:
-          "Signed out: afternoon break was left open past the allowed time plus 15 minutes.",
-      },
-      {
-        active: isLunchBreakActive,
-        breakInAt: todayEntry?.lunch_break_in_at,
-        durationMin: LUNCH_BREAK_MIN,
-        verify: (e, breakIn) =>
-          e?.lunch_break_in_at === breakIn && !e?.lunch_break_out_at,
-        patch: () => ({
-          lunch_break_out_at: new Date().toISOString(),
-        }),
-        toastMsg:
-          "Signed out: lunch break was left open past the allowed time plus 15 minutes.",
-      },
-    ];
-
-    const timerIds = [];
-
-    for (const cfg of configs) {
-      if (!cfg.active || !cfg.breakInAt) continue;
-
-      const breakIn = cfg.breakInAt;
-      const startMs = new Date(breakIn).getTime();
-      const fireAt = startMs + cfg.durationMin * 60 * 1000 + graceMs;
-      const delay = Math.max(0, fireAt - Date.now());
-
-      const id = window.setTimeout(async () => {
-        const e = todayEntryRef.current;
-        if (!cfg.verify(e, breakIn)) return;
-        const patchFn = updateTodayEntryRef.current;
-        try {
-          if (patchFn) await patchFn(cfg.patch());
-        } catch {
-          toast.error("Could not record break end automatically.");
-        }
-        toast.info(cfg.toastMsg);
-        await signOut();
-      }, delay);
-
-      timerIds.push(id);
-    }
-
-    return () => {
-      for (const id of timerIds) window.clearTimeout(id);
-    };
-  }, [
-    user,
-    FORGOT_BREAK_SIGNOUT_AFTER_MIN,
-    isMorningBreakActive,
-    isAfternoonBreakActive,
-    isLunchBreakActive,
-    todayEntry?.morning_break_in_at,
-    todayEntry?.afternoon_break_in_at,
-    todayEntry?.lunch_break_in_at,
-    MORNING_BREAK_MIN,
-    AFTERNOON_BREAK_MIN,
-    LUNCH_BREAK_MIN,
-  ]);
 
   useEffect(() => {
     if (!user) return;
@@ -1216,14 +973,22 @@ export default function UserDashboard() {
         clock_out_at: autoClockOutIso,
       };
 
-      if (entry.morning_break_in_at && !entry.morning_break_out_at) {
-        patch.morning_break_out_at = autoClockOutIso;
-      }
-      if (entry.afternoon_break_in_at && !entry.afternoon_break_out_at) {
-        patch.afternoon_break_out_at = autoClockOutIso;
-      }
-      if (entry.lunch_break_in_at && !entry.lunch_break_out_at) {
-        patch.lunch_break_out_at = autoClockOutIso;
+      const breakState = getPersonalBreakState(entry, autoClockOutIso);
+      if (breakState.isRunning || breakState.remainingSeconds === 0) {
+        const didComplete = breakState.remainingSeconds === 0;
+        patch.personal_break_last_started_at = null;
+        patch.personal_break_ended_at = autoClockOutIso;
+        patch.personal_break_remaining_seconds = breakState.remainingSeconds;
+        patch.personal_break_is_paused = !didComplete && breakState.remainingSeconds > 0;
+        patch.personal_break_history = appendPersonalBreakHistoryEvent(
+          entry?.personal_break_history,
+          {
+            type: didComplete ? "complete" : "pause",
+            at: autoClockOutIso,
+            remainingSeconds: breakState.remainingSeconds,
+            note: "auto_clock_out",
+          },
+        );
       }
 
       try {
@@ -1239,18 +1004,6 @@ export default function UserDashboard() {
             },
           )} after the 10-minute grace period.`,
         );
-        await logAuditEvent({
-          eventType: "warning",
-          module: "user",
-          action: "auto_clock_out",
-          description: `${user.email} was automatically clocked out after missing shift end.`,
-          actor: auditActor,
-          metadata: {
-            shift_date: entry.shift_date,
-            scheduled_shift_end: weeklyShift.shift_end_time,
-            auto_clock_out_at: autoClockOutIso,
-          },
-        });
       } catch {
         toast.error("Failed to record automatic clock out.");
       }
@@ -1258,7 +1011,6 @@ export default function UserDashboard() {
 
     return () => window.clearTimeout(id);
   }, [
-    auditActor,
     isOvertimeActive,
     isShiftActive,
     isShiftCompleted,
@@ -1281,21 +1033,18 @@ export default function UserDashboard() {
 
     if (type === "clock_in") return handleClockIn();
     if (type === "clock_out") return handleClockOut();
-    if (type === "morning_break_start") return startBreak("morning");
-    if (type === "morning_break_end") return endBreak("morning");
-    if (type === "afternoon_break_start") return startBreak("afternoon");
-    if (type === "afternoon_break_end") return endBreak("afternoon");
-    if (type === "lunch_break_start") return startBreak("lunch");
-    if (type === "lunch_break_end") return endBreak("lunch");
+    if (type === "personal_break_start") return startPersonalBreak();
+    if (type === "personal_break_pause")
+      return pausePersonalBreak({ completed: false });
     if (type === "overtime_start") return startOvertime();
     if (type === "overtime_end") return endOvertime();
   }, [
     confirmType,
-    endBreak,
     endOvertime,
     handleClockIn,
     handleClockOut,
-    startBreak,
+    pausePersonalBreak,
+    startPersonalBreak,
     startOvertime,
   ]);
 
@@ -1317,42 +1066,19 @@ export default function UserDashboard() {
         description: "Confirm you want to clock out and finish your shift.",
       };
 
-    if (confirmType === "morning_break_start")
+    if (confirmType === "personal_break_start")
       return {
-        title: "Start Morning Break",
+        title: personalBreakState.hasStarted
+          ? "Resume Personal Break"
+          : "Start Personal Break",
         description:
-          "Confirm you want to start the 15-minute morning break (available before 12:00 PM).",
+          "Confirm you want to use your personal break time now.",
       };
-    if (confirmType === "morning_break_end")
+    if (confirmType === "personal_break_pause")
       return {
-        title: "End Morning Break",
-        description: "Confirm you want to end the morning break now.",
+        title: "Pause Personal Break",
+        description: "Confirm you want to pause your personal break now.",
       };
-
-    if (confirmType === "afternoon_break_start")
-      return {
-        title: "Start Afternoon Break",
-        description:
-          "Confirm you want to start the 15-minute afternoon break (available 1:00–5:00 PM).",
-      };
-    if (confirmType === "afternoon_break_end")
-      return {
-        title: "End Afternoon Break",
-        description: "Confirm you want to end the afternoon break now.",
-      };
-
-    if (confirmType === "lunch_break_start")
-      return {
-        title: "Start Lunch Break",
-        description:
-          "Confirm you want to start the 60-minute lunch break (available 12:00–1:00 PM).",
-      };
-    if (confirmType === "lunch_break_end")
-      return {
-        title: "End Lunch Break",
-        description: "Confirm you want to end the lunch break now.",
-      };
-
     if (confirmType === "overtime_start")
       return {
         title: "Start Overtime",
@@ -1368,7 +1094,7 @@ export default function UserDashboard() {
       title: "Confirm Action",
       description: "Are you sure you want to continue?",
     };
-  }, [confirmType]);
+  }, [confirmType, personalBreakState.hasStarted]);
 
   return (
     <div className="user-portal flex h-screen bg-gray-50 overflow-hidden">
@@ -1452,7 +1178,7 @@ export default function UserDashboard() {
                         How this attendance system works
                       </h3>
                       <p className="text-sm text-gray-500 font-medium">
-                        Follow these rules so your time-in, breaks, lunch,
+                        Follow these rules so your time-in, personal break,
                         time-out, and overtime are recorded correctly.
                       </p>
                     </div>
@@ -1615,210 +1341,104 @@ export default function UserDashboard() {
                     </p>
                   )}
                 </div>
-
-                {/* Break Schedule / Countdown */}
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {/* Morning break */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div>
-                          <p className="text-orange-500 font-bold text-sm uppercase tracking-widest mb-1">
-                            Morning Break
-                          </p>
-                          <p className="text-gray-500 text-xs font-medium">
-                            {MORNING_BREAK_MIN} min · default before 12:00 PM
-                          </p>
-                        </div>
-                        {hasMorningBreak && !isMorningBreakActive ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-green-50 text-green-600">
-                            <CheckCircle2 size={12} />
-                            Completed
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-orange-50 text-orange-600">
-                            <AlertCircle size={12} />
-                            {isMorningBreakActive ? "Running" : "Not started"}
-                          </span>
-                        )}
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-orange-500 font-bold text-sm uppercase tracking-widest mb-1">
+                          Personal Break
+                        </p>
+                        <p className="text-gray-500 text-xs font-medium">
+                          {PERSONAL_BREAK_TOTAL_MINUTES} min total for the day
+                        </p>
+                        <p className="mt-3 text-sm font-medium text-gray-500">
+                          Use it in one stretch or split it across your shift by pausing and resuming.
+                        </p>
                       </div>
 
-                      {isMorningBreakActive ? (
-                        <>
-                          <div className="text-center">
-                            <div className="text-3xl font-black text-gray-800 tabular-nums">
-                              {formatMMSS(countdown.morningRemainingSec)}
-                            </div>
-                            <div className="mt-3 flex justify-center">
-                              {renderRemainingLines(
-                                countdown.morningRemainingSec,
-                                MORNING_BREAK_MIN,
-                                60,
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-4">
-                            <button
-                              onClick={() => openConfirm("morning_break_end")}
-                              disabled={isActionPending || isConfirmOpen}
-                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                            >
-                              End Now
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => openConfirm("morning_break_start")}
-                          disabled={
-                            isActionPending ||
-                            isConfirmOpen ||
-                            !isShiftActive ||
-                            isAnyBreakActive ||
-                            hasMorningBreak ||
-                            !breakStartWindows.canStartMorning
-                          }
-                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                        >
-                          Start Morning Break
-                        </button>
-                      )}
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                          personalBreakState.isCompleted
+                            ? "bg-green-50 text-green-600"
+                            : personalBreakState.isRunning
+                              ? "bg-orange-50 text-orange-600"
+                              : personalBreakState.canResume
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {personalBreakState.isCompleted ? (
+                          <CheckCircle2 size={12} />
+                        ) : (
+                          <AlertCircle size={12} />
+                        )}
+                        {personalBreakState.isCompleted
+                          ? "Completed"
+                          : personalBreakState.isRunning
+                            ? "Running"
+                            : personalBreakState.canResume
+                              ? "Paused"
+                              : "Not started"}
+                      </span>
                     </div>
-                    {/* Lunch break */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div>
-                          <p className="text-orange-500 font-bold text-sm uppercase tracking-widest mb-1">
-                            Lunch Break
-                          </p>
-                          <p className="text-gray-500 text-xs font-medium">
-                            {LUNCH_BREAK_MIN} min · default 12:00–1:00 PM
-                          </p>
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                      <div className="text-center md:text-left">
+                        <div className="text-3xl font-black text-gray-800 tabular-nums">
+                          {formatMMSS(
+                            isPersonalBreakActive
+                              ? countdown.personalBreakRemainingSec
+                              : personalBreakState.remainingSeconds,
+                          )}
                         </div>
-                        {hasLunchBreak && !isLunchBreakActive ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-green-50 text-green-600">
-                            <CheckCircle2 size={12} />
-                            Completed
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-orange-50 text-orange-600">
-                            <AlertCircle size={12} />
-                            {isLunchBreakActive ? "Running" : "Not started"}
-                          </span>
-                        )}
+                        <div className="mt-3 flex justify-center md:justify-start">
+                          {renderRemainingLines(
+                            isPersonalBreakActive
+                              ? countdown.personalBreakRemainingSec
+                              : personalBreakState.remainingSeconds,
+                            PERSONAL_BREAK_TOTAL_MINUTES,
+                            60,
+                          )}
+                        </div>
+                        <p className="mt-3 text-xs font-bold uppercase tracking-widest text-gray-400">
+                          {formatPersonalBreakLogValue(todayEntry, currentTime)}
+                        </p>
                       </div>
 
-                      {isLunchBreakActive ? (
-                        <>
-                          <div className="text-center">
-                            <div className="text-3xl font-black text-gray-800 tabular-nums">
-                              {formatMMSS(countdown.lunchRemainingSec)}
-                            </div>
-                            <div className="mt-3 flex justify-center">
-                              {renderRemainingLines(
-                                countdown.lunchRemainingSec,
-                                30,
-                                120,
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-4">
-                            <button
-                              onClick={() => openConfirm("lunch_break_end")}
-                              disabled={isActionPending || isConfirmOpen}
-                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                            >
-                              End Now
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => openConfirm("lunch_break_start")}
-                          disabled={
-                            isActionPending ||
-                            isConfirmOpen ||
-                            !isShiftActive ||
-                            isAnyBreakActive ||
-                            hasLunchBreak ||
-                            !breakStartWindows.canStartLunch
-                          }
-                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                        >
-                          Start Lunch Break
-                        </button>
-                      )}
-                    </div>
-                    {/* Afternoon break */}
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div>
-                          <p className="text-orange-500 font-bold text-sm uppercase tracking-widest mb-1">
-                            Afternoon Break
-                          </p>
-                          <p className="text-gray-500 text-xs font-medium">
-                            {AFTERNOON_BREAK_MIN} min · default 1:00–5:00 PM
-                          </p>
-                        </div>
-                        {hasAfternoonBreak && !isAfternoonBreakActive ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-green-50 text-green-600">
-                            <CheckCircle2 size={12} />
-                            Completed
-                          </span>
+                      <div className="flex w-full flex-col gap-3 md:w-56">
+                        {isPersonalBreakActive ? (
+                          <button
+                            onClick={() => openConfirm("personal_break_pause")}
+                            disabled={isActionPending || isConfirmOpen}
+                            className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                          >
+                            Pause Break
+                          </button>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-orange-50 text-orange-600">
-                            <AlertCircle size={12} />
-                            {isAfternoonBreakActive ? "Running" : "Not started"}
-                          </span>
+                          <button
+                            onClick={() => openConfirm("personal_break_start")}
+                            disabled={
+                              isActionPending ||
+                              isConfirmOpen ||
+                              !isShiftActive ||
+                              isAnyBreakActive ||
+                              personalBreakState.remainingSeconds <= 0
+                            }
+                            className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+                          >
+                            {personalBreakState.canResume
+                              ? "Resume Break"
+                              : "Start Break"}
+                          </button>
                         )}
-                      </div>
 
-                      {isAfternoonBreakActive ? (
-                        <>
-                          <div className="text-center">
-                            <div className="text-3xl font-black text-gray-800 tabular-nums">
-                              {formatMMSS(countdown.afternoonRemainingSec)}
-                            </div>
-                            <div className="mt-3 flex justify-center">
-                              {renderRemainingLines(
-                                countdown.afternoonRemainingSec,
-                                AFTERNOON_BREAK_MIN,
-                                60,
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-4">
-                            <button
-                              onClick={() => openConfirm("afternoon_break_end")}
-                              disabled={isActionPending || isConfirmOpen}
-                              className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                            >
-                              End Now
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => openConfirm("afternoon_break_start")}
-                          disabled={
-                            isActionPending ||
-                            isConfirmOpen ||
-                            !isShiftActive ||
-                            isAnyBreakActive ||
-                            hasAfternoonBreak ||
-                            !breakStartWindows.canStartAfternoon
-                          }
-                          className="w-full px-6 py-3 rounded-2xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-orange-200 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                        >
-                          Start Afternoon Break
-                        </button>
-                      )}
+                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs font-medium text-gray-500">
+                          <p>{formatPersonalBreakLogValue(todayEntry, currentTime)}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Timeout intentionally removed */}
                 </div>
-
                 <div className="overflow-hidden rounded-[28px] border border-orange-100/70 bg-white shadow-[0_24px_60px_-32px_rgba(249,115,22,0.35)]">
                   <div className="border-b border-orange-100/70 bg-gradient-to-r from-orange-50 via-amber-50 to-white p-6">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1901,7 +1521,7 @@ export default function UserDashboard() {
                           No attendance record has been started for today yet.
                         </p>
                         <p className="mt-1 text-sm text-orange-600/90">
-                          Once you clock in, this panel will show your live time-in, breaks, clock-out, and overtime details.
+                          Once you clock in, this panel will show your live time-in, personal break, clock-out, and overtime details.
                         </p>
                       </div>
                     )}
@@ -1944,3 +1564,5 @@ export default function UserDashboard() {
     </div>
   );
 }
+
+

@@ -18,7 +18,6 @@ import {
 import { useLoading } from "../../context/LoadingContext";
 import { createUser } from "../../utils/auth";
 import { toast } from "react-toastify";
-import { useAuth } from "../../context/AuthContext";
 import {
   Select,
   SelectContent,
@@ -52,7 +51,6 @@ const FormRow = ({ label, children, icon }) => (
 
 const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
   const { setLoading } = useLoading();
-  const { user } = useAuth();
 
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,13 +119,6 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
         password: formData.password,
         role: formData.role,
         employee_code: normalizedEmployeeCode,
-        auditContext: {
-          actor: {
-            auth_id: user?.id,
-            email: user?.email,
-            role: "Admin",
-          },
-        },
       });
 
       if (response.success) {
