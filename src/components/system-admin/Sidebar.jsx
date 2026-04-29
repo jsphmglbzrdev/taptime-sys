@@ -1,32 +1,57 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  Calendar,
+  Activity,
+  BarChart3,
   LogOut,
-  X,
-  LayoutDashboard,
-  UserCheck2,
   PanelLeftClose,
   PanelLeftOpen,
-  Clock,
-  Coffee,
-  History,
+  User2,
+  Users,
+  X,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import ConfirmationBox from "../ConfirmationBox";
 import { useLoading } from "../../context/LoadingContext";
 import { signOut } from "../../utils/auth";
-import { useNavigate } from "react-router-dom";
+import NavItem from "../admin/NavItem";
 import jk2l2Logo from "/JK2L2_Crown.png";
 
-const Sidebar = ({
+export default function Sidebar({
   isSidebarOpen,
   setIsSidebarOpen,
   activeTab,
   setActiveTab,
-}) => {
+}) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const navigate = useNavigate();
   const { setLoading } = useLoading();
+
+  const menuItems = useMemo(
+    () => [
+      {
+        id: "Dashboard",
+        icon: <BarChart3 size={20} />,
+        label: "Dashboard",
+      },
+      {
+        id: "Accounts",
+        icon: <Users size={20} />,
+        label: "Accounts",
+      },
+      {
+        id: "User Activity",
+        icon: <Activity size={20} />,
+        label: "User Activity",
+      },
+      {
+        id: "My Account",
+        icon: <User2 size={20} />,
+        label: "My Account",
+      },
+    ],
+    [],
+  );
 
   const handleLogout = async () => {
     setLoading(true);
@@ -72,7 +97,7 @@ const Sidebar = ({
                   TapTime
                 </p>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
-                  JK2L2
+                  System Admin
                 </p>
               </div>
             </div>
@@ -87,36 +112,19 @@ const Sidebar = ({
           </div>
 
           <nav className="flex-1 space-y-1 p-3">
-            <NavItem
-              icon={<LayoutDashboard size={20} />}
-              label="Dashboard"
-              active={activeTab === "Dashboard"}
-              collapsed={isCollapsed}
-              onClick={() => {
-                setActiveTab("Dashboard");
-                setIsSidebarOpen(false);
-              }}
-            />
-            <NavItem
-              icon={<Calendar size={20} />}
-              label="My Logs"
-              active={activeTab === "My Logs"}
-              collapsed={isCollapsed}
-              onClick={() => {
-                setActiveTab("My Logs");
-                setIsSidebarOpen(false);
-              }}
-            />
-            <NavItem
-              icon={<UserCheck2 size={20} />}
-              label="Profile"
-              active={activeTab === "Profile"}
-              collapsed={isCollapsed}
-              onClick={() => {
-                setActiveTab("Profile");
-                setIsSidebarOpen(false);
-              }}
-            />
+            {menuItems.map((item) => (
+              <NavItem
+                key={item.id}
+                icon={item.icon}
+                label={item.label}
+                active={activeTab === item.id}
+                collapsed={isCollapsed}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsSidebarOpen(false);
+                }}
+              />
+            ))}
           </nav>
 
           <div className="border-t border-gray-100 p-3">
@@ -145,11 +153,7 @@ const Sidebar = ({
                 title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 className="hidden shrink-0 rounded-xl border border-gray-200 p-3 text-gray-500 transition-all hover:bg-orange-50 hover:text-orange-600 lg:inline-flex"
               >
-                {isCollapsed ? (
-                  <PanelLeftOpen size={18} />
-                ) : (
-                  <PanelLeftClose size={18} />
-                )}
+                {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
               </button>
             </div>
           </div>
@@ -167,36 +171,10 @@ const Sidebar = ({
         title="Logout"
         description="Are you sure you want to logout?"
         buttonText="Logout"
-        isModalOpen={isModalOpen}
         setIsModalOpen={setIsModalOpen}
+        isModalOpen={isModalOpen}
         handleAction={handleLogout}
       />
     </>
-  );
-};
-
-export default Sidebar;
-
-function NavItem({ icon, label, active = false, onClick, collapsed = false }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={collapsed ? label : undefined}
-      className={`flex w-full items-center rounded-xl py-3 text-left text-sm font-bold transition-all ${
-        active
-          ? "bg-orange-500 text-white shadow-lg shadow-orange-100"
-          : "text-gray-500 hover:bg-orange-50 hover:text-orange-600"
-      } ${collapsed ? "justify-center px-3" : "px-4"}`}
-    >
-      <span className={collapsed ? "" : "mr-3"}>{icon}</span>
-      <span
-        className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
-          collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
-        }`}
-      >
-        {label}
-      </span>
-    </button>
   );
 }

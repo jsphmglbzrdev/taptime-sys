@@ -10,6 +10,7 @@ import {
 import { toast } from "react-toastify";
 import { recordAttendanceByQr } from "../../utils/admin";
 import { useAuth } from "../../context/AuthContext";
+import { getRoleLabel } from "../../utils/roles";
 
 function formatScannedAt(value) {
   if (!value) return "-";
@@ -55,16 +56,13 @@ export default function QrAttendanceScannerPanel({
     () => ({
       auth_id: user?.id,
       email: user?.email,
-      role: restrictToEmployeeCode ? "Employee" : "Admin",
+      role: restrictToEmployeeCode ? "Employee" : getRoleLabel("Employer"),
     }),
     [restrictToEmployeeCode, user?.email, user?.id],
   );
 
   const showInlineHeading = mode !== "modal";
-  const todayKey = useMemo(
-    () => new Date().toLocaleDateString("en-CA"),
-    [isOpen],
-  );
+  const todayKey = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
   const storageKey = useMemo(() => {
     if (!restrictToEmployeeCode || !user?.id) return null;
     return `qr-scan-history:${user.id}:${todayKey}`;

@@ -3,11 +3,12 @@ import { Eye, EyeOff, Lock, User } from "lucide-react";
 import { getCurrentUser, signIn } from "../utils/auth";
 import { useLoading } from "../context/LoadingContext";
 import { toast } from "react-toastify";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { isEmployerRole } from "../utils/roles";
 import logo from "/surf2sawa.png";
 import jk2l2_logo from "/JK2L2_Crown.png"
-export default function LoginForm({ onLogin }) {
+export default function LoginForm() {
   const { setLoading } = useLoading();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -25,7 +26,12 @@ export default function LoginForm({ onLogin }) {
       const { data, error } = await getCurrentUser(user.id);
       if (cancelled || error) return;
 
-      if (data?.role === "Admin") {
+      if (data?.role === "System Admin") {
+        navigate("/system-admin/dashboard", { replace: true });
+        return;
+      }
+
+      if (isEmployerRole(data?.role)) {
         navigate("/admin/dashboard", { replace: true });
         return;
       }
@@ -61,12 +67,14 @@ export default function LoginForm({ onLogin }) {
         return; // stop further execution
       }
 
-      if (response.account.role === "Admin") {
+      if (response.account.role === "System Admin") {
+        navigate("/system-admin/dashboard");
+      } else if (isEmployerRole(response.account.role)) {
         navigate("/admin/dashboard");
       } else {
         navigate("/user/dashboard");
       }
-    } catch (err) {
+    } catch {
       toast.error("Something went wrong");
     } finally {
       setUsername("");
@@ -155,6 +163,17 @@ export default function LoginForm({ onLogin }) {
             >
               {isSubmitting ? "Signing In..." : "Sign In"}
             </button>
+
+            <Link
+              to="/signup"
+              className="w-full cursor-pointer inline-flex justify-center rounded-xl border border-orange-200 px-4 py-3 text-sm font-semibold text-orange-600 transition-all hover:bg-orange-50"
+            >
+              Sign Up
+            </Link>
+
+            <p className="text-center text-sm text-gray-500">
+              Don&apos;t have an account yet? Sign up to create your employee access, then use your employer invite code on the final step to join your organization.
+            </p>
           </form>
         </div>
 

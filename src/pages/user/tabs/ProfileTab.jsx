@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Eye, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuth } from "../../../context/AuthContext";
-import { getCurrentUser } from "../../../utils/auth";
+import { getCurrentUser, getEmployerByCode } from "../../../utils/auth";
 import {
   AVATAR_MAX_SIZE_LABEL,
   deleteAvatarForUser,
@@ -32,6 +32,7 @@ function getInitials(profile) {
 export default function ProfileTab() {
   const { user } = useAuth();
   const [profile, setProfile] = useState(null);
+  const [employerProfile, setEmployerProfile] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const [avatarSrc, setAvatarSrc] = useState("");
   const [avatarDraftFile, setAvatarDraftFile] = useState(null);
@@ -50,6 +51,12 @@ export default function ProfileTab() {
       if (res?.error) throw res.error;
       const p = res.data ?? null;
       setProfile(p);
+      if (String(p?.employer_code ?? "").trim()) {
+        const employerRes = await getEmployerByCode(p.employer_code);
+        setEmployerProfile(employerRes.success ? employerRes.data : null);
+      } else {
+        setEmployerProfile(null);
+      }
       try {
         const url = await resolveAvatarSrc(p?.avatar_url);
         setAvatarSrc(url);
@@ -59,7 +66,7 @@ export default function ProfileTab() {
     } catch {
       toast.error("Failed to load profile.");
     }
-  }, [resolveAvatarSrc, user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     loadProfile();
@@ -225,6 +232,18 @@ export default function ProfileTab() {
                 <span className="font-bold text-gray-600">Role:</span>{" "}
                 {profile?.role ?? "Employee"}
               </p>
+              {profile?.department && (
+                <p>
+                  <span className="font-bold text-gray-600">Department:</span>{" "}
+                  {profile.department}
+                </p>
+              )}
+              {profile?.employer_code && (
+                <p>
+                  <span className="font-bold text-gray-600">Employer Code:</span>{" "}
+                  {profile.employer_code}
+                </p>
+              )}
             </div>
 
             <div className="pt-2">
@@ -280,6 +299,36 @@ export default function ProfileTab() {
         title="My Attendance QR"
         description="Download this QR code and use it as an optional way to clock in and clock out."
       />
+
+      {employerProfile && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+          <h3 className="text-lg font-black text-gray-800">Associated Employer</h3>
+          <p className="mt-1 text-sm font-medium text-gray-500">
+            Your employee account is currently connected to this employer through the invite code you used during sign up.
+          </p>
+
+          <div className="mt-5 rounded-2xl border border-orange-100 bg-orange-50/60 p-5">
+            <p className="text-base font-black text-gray-900">
+              {`${employerProfile.first_name ?? ""} ${employerProfile.last_name ?? ""}`.trim() ||
+                employerProfile.email}
+            </p>
+            <div className="mt-3 space-y-1 text-sm font-medium text-gray-600">
+              <p>
+                <span className="font-bold text-gray-700">Email:</span>{" "}
+                {employerProfile.email}
+              </p>
+              <p>
+                <span className="font-bold text-gray-700">Department:</span>{" "}
+                {employerProfile.department || "Not assigned"}
+              </p>
+              <p>
+                <span className="font-bold text-gray-700">Employer Code:</span>{" "}
+                {employerProfile.employer_code}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
         <h3 className="text-lg font-black text-gray-800">Update password</h3>

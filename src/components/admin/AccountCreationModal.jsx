@@ -14,9 +14,10 @@ import {
   RefreshCw,
   Download,
   ScanLine,
+  Building2,
 } from "lucide-react";
 import { useLoading } from "../../context/LoadingContext";
-import { createUser } from "../../utils/auth";
+import { createUser } from "../../utils/admin";
 import { toast } from "react-toastify";
 import {
   Select,
@@ -31,6 +32,12 @@ import {
   isValidEmployeeCode,
   normalizeEmployeeCode,
 } from "../../utils/attendanceQr";
+import { isEmployerRole } from "../../utils/roles";
+import {
+  CUSTOM_DEPARTMENT_VALUE,
+  PREDEFINED_DEPARTMENTS,
+  normalizeDepartmentValue,
+} from "../../utils/departments";
 /**
  * Modernized Form Row Component
  * Defined OUTSIDE the main component to prevent re-mounting and focus loss during typing.
@@ -49,8 +56,24 @@ const FormRow = ({ label, children, icon }) => (
   </div>
 );
 
-const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
+const AccountCreationModal = ({
+  isOpen,
+  setIsFormOpen,
+  allowedRoles = ["Employee", "Employer", "System Admin"],
+  lockedRole = null,
+  defaultEmployerCode = "",
+  title = "Create Account",
+  description = "Configure details and assign workspace permissions.",
+}) => {
   const { setLoading } = useLoading();
+  const normalizedDefaultEmployerCode = String(defaultEmployerCode ?? "")
+    .trim()
+    .toUpperCase();
+  const effectiveDefaultRole =
+    lockedRole && allowedRoles.includes(lockedRole)
+      ? lockedRole
+      : allowedRoles[0] || "Employee";
+  const hideRoleSelector = !!lockedRole && allowedRoles.length === 1;
 
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,7 +83,10 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
     last_name: "",
     email: "",
     password: "",
-    role: "Employee",
+    role: effectiveDefaultRole,
+    department: PREDEFINED_DEPARTMENTS[0],
+    custom_department: "",
+    employer_code: normalizedDefaultEmployerCode,
     employee_code: generateRandomEmployeeCode(),
   });
   const initialFormData = useMemo(
@@ -69,10 +95,13 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
       last_name: "",
       email: "",
       password: "",
-      role: "Employee",
+      role: effectiveDefaultRole,
+      department: PREDEFINED_DEPARTMENTS[0],
+      custom_department: "",
+      employer_code: normalizedDefaultEmployerCode,
       employee_code: generateRandomEmployeeCode(),
     }),
-    [],
+    [effectiveDefaultRole, normalizedDefaultEmployerCode],
   );
 
   const closeModal = useCallback(() => {
@@ -96,16 +125,24 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
 
   if (!isOpen) return null;
 
+  const roleValue = hideRoleSelector ? effectiveDefaultRole : formData.role;
+  const isEmployeeRole = formData.role === "Employee";
+  const isEmployerAccount = isEmployerRole(formData.role);
+  const shouldAskEmployerCode =
+    isEmployeeRole && !normalizedDefaultEmployerCode;
+  const resolvedDepartment = normalizeDepartmentValue({
+    selectedDepartment: formData.department,
+    customDepartment: formData.custom_department,
+  });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setIsSubmitting(true);
 
     try {
-      const normalizedEmployeeCode = normalizeEmployeeCode(
-        formData.employee_code,
-      );
-      if (!isValidEmployeeCode(normalizedEmployeeCode)) {
+      const normalizedEmployeeCode = normalizeEmployeeCode(formData.employee_code);
+      if (isEmployeeRole && !isValidEmployeeCode(normalizedEmployeeCode)) {
         toast.error(
           `Employee ID must be exactly ${EMPLOYEE_CODE_LENGTH} digits.`,
         );
@@ -117,8 +154,12 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
         last_name: formData.last_name,
         email: formData.email,
         password: formData.password,
-        role: formData.role,
-        employee_code: normalizedEmployeeCode,
+        role: roleValue,
+        department: isEmployerAccount ? resolvedDepartment : "",
+        employer_code: isEmployeeRole
+          ? normalizedDefaultEmployerCode || formData.employer_code
+          : null,
+        employee_code: isEmployeeRole ? normalizedEmployeeCode : null,
       });
 
       if (response.success) {
@@ -142,12 +183,30 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
     setFormData((prev) => ({
       ...prev,
       [name]:
-        name === "employee_code" ? normalizeEmployeeCode(value) : value,
+        name === "employee_code"
+          ? normalizeEmployeeCode(value)
+          : name === "employer_code"
+            ? String(value).toUpperCase()
+            : value,
     }));
   };
 
   const handleRoleChange = (value) => {
-    setFormData((prev) => ({ ...prev, role: value }));
+    setFormData((prev) => ({
+      ...prev,
+      role: value,
+      department:
+        value === "Employer"
+          ? prev.department || PREDEFINED_DEPARTMENTS[0]
+          : PREDEFINED_DEPARTMENTS[0],
+      custom_department: value === "Employer" ? prev.custom_department : "",
+      employer_code:
+        value === "Employee"
+          ? normalizedDefaultEmployerCode || prev.employer_code
+          : normalizedDefaultEmployerCode,
+      employee_code:
+        value === "Employee" ? prev.employee_code || generateRandomEmployeeCode() : "",
+    }));
   };
 
   const regenerateEmployeeCode = () => {
@@ -212,36 +271,80 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
                 Profile Activated
               </h2>
               <p className="mt-2 text-sm sm:text-base text-slate-500">
-                The employee account and attendance QR are ready.
+                {createdAccount?.employee_code
+                  ? "The employee account and attendance QR are ready."
+                  : "The employer account is ready to use."}
               </p>
               <div className="mt-6 w-full rounded-2xl border border-orange-100 bg-orange-50/50 p-5">
-                <div
-                  className="mx-auto flex h-64 w-64 max-w-full items-center justify-center rounded-2xl bg-white p-4 shadow-sm"
-                  dangerouslySetInnerHTML={{
-                    __html: createdAccount.attendance_qr_svg ?? "",
-                  }}
-                />
-                <div className="mt-4 space-y-1 text-left">
-                  <p className="text-xs font-black uppercase tracking-widest text-gray-400">
-                    Employee ID
-                  </p>
-                  <p className="text-lg font-black tracking-[0.2em] text-gray-800">
-                    {createdAccount.employee_code}
-                  </p>
-                  <p className="text-xs font-medium text-gray-500">
-                    Scan this QR from the admin attendance scanner to clock in or
-                    clock out this employee.
-                  </p>
-                </div>
+                {createdAccount?.attendance_qr_svg ? (
+                  <>
+                    <div
+                      className="mx-auto flex h-64 w-64 max-w-full items-center justify-center rounded-2xl bg-white p-4 shadow-sm"
+                      dangerouslySetInnerHTML={{
+                        __html: createdAccount.attendance_qr_svg ?? "",
+                      }}
+                    />
+                    <div className="mt-4 space-y-1 text-left">
+                      <p className="text-xs font-black uppercase tracking-widest text-gray-400">
+                        Employee ID
+                      </p>
+                      <p className="text-lg font-black tracking-[0.2em] text-gray-800">
+                        {createdAccount.employee_code}
+                      </p>
+                      <p className="text-xs font-medium text-gray-500">
+                        Scan this QR from the employer attendance scanner to clock in or
+                        clock out this employee.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-2xl bg-white px-5 py-6 text-left shadow-sm">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-gray-400">
+                          Account Role
+                        </p>
+                        <p className="mt-2 text-lg font-black text-gray-800">
+                          {createdAccount?.role ?? "User"}
+                        </p>
+                      </div>
+                      {createdAccount?.department && (
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-gray-400">
+                            Department
+                          </p>
+                          <p className="mt-1 text-base font-black text-gray-800">
+                            {createdAccount.department}
+                          </p>
+                        </div>
+                      )}
+                      {createdAccount?.employer_code && (
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-gray-400">
+                            Employer Code
+                          </p>
+                          <p className="mt-1 break-all text-base font-black tracking-[0.16em] text-gray-800">
+                            {createdAccount.employer_code}
+                          </p>
+                        </div>
+                      )}
+                      <p className="text-sm font-medium text-gray-500">
+                        No attendance QR was generated because this account is not an employee account.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={downloadQrSvg}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
-                  >
-                    <Download size={16} />
-                    Download QR
-                  </button>
+                  {createdAccount?.attendance_qr_svg && (
+                    <button
+                      type="button"
+                      onClick={downloadQrSvg}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
+                    >
+                      <Download size={16} />
+                      Download QR
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={closeModal}
@@ -265,10 +368,10 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
                   </span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">
-                  Create Account
+                  {title}
                 </h2>
                 <p className="text-slate-500 mt-2 text-sm sm:text-base">
-                  Configure details and assign workspace permissions.
+                  {description}
                 </p>
               </div>
 
@@ -334,55 +437,133 @@ const AccountCreationModal = ({ isOpen, setIsFormOpen }) => {
                     </button>
                   </FormRow>
 
-                  <FormRow label="Employee ID" icon={ScanLine}>
-                    <div className="flex w-full gap-2">
-                      <input
-                        type="text"
-                        name="employee_code"
-                        required
-                        inputMode="numeric"
-                        pattern={`\\d{${EMPLOYEE_CODE_LENGTH}}`}
-                        maxLength={EMPLOYEE_CODE_LENGTH}
-                        placeholder="7-digit employee ID"
-                        value={formData.employee_code}
-                        onChange={handleChange}
-                        className="block w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={regenerateEmployeeCode}
-                        className="inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 transition-all hover:bg-slate-50 hover:text-orange-600"
-                        title="Generate random employee ID"
-                      >
-                        <RefreshCw size={18} />
-                      </button>
-                    </div>
-                  </FormRow>
+                  {isEmployerAccount && (
+                    <>
+                      <FormRow label="Department" icon={Building2}>
+                        <Select
+                          value={formData.department}
+                          onValueChange={(value) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              department: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="pl-11 text-slate-900 border-slate-200 focus:ring-orange-500/10 focus:border-orange-500">
+                            <SelectValue placeholder="Select department" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PREDEFINED_DEPARTMENTS.map((department) => (
+                              <SelectItem key={department} value={department}>
+                                {department}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value={CUSTOM_DEPARTMENT_VALUE}>
+                              Custom Department
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormRow>
 
-                  <FormRow
-                    label="Access Role"
-                    icon={formData.role === "Admin" ? ShieldCheck : Contact}
-                  >
-                    <Select
-                      value={formData.role}
-                      onValueChange={handleRoleChange}
+                      {formData.department === CUSTOM_DEPARTMENT_VALUE && (
+                        <FormRow label="Custom Department" icon={Building2}>
+                          <input
+                            type="text"
+                            name="custom_department"
+                            required
+                            placeholder="Enter custom department"
+                            value={formData.custom_department}
+                            onChange={handleChange}
+                            className="block w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm"
+                          />
+                        </FormRow>
+                      )}
+                    </>
+                  )}
+
+                  {isEmployeeRole && (
+                    <>
+                      {shouldAskEmployerCode ? (
+                        <FormRow label="Employer Invite Code" icon={Building2}>
+                          <input
+                            type="text"
+                            name="employer_code"
+                            required
+                            placeholder="Enter employer code"
+                            value={formData.employer_code}
+                            onChange={handleChange}
+                            className="block w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 uppercase focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm"
+                          />
+                        </FormRow>
+                      ) : (
+                        <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-900">
+                          This employee will be linked to your employer account automatically.
+                        </div>
+                      )}
+
+                      <FormRow label="Employee ID" icon={ScanLine}>
+                        <div className="flex w-full gap-2">
+                          <input
+                            type="text"
+                            name="employee_code"
+                            required
+                            inputMode="numeric"
+                            pattern={`\\d{${EMPLOYEE_CODE_LENGTH}}`}
+                            maxLength={EMPLOYEE_CODE_LENGTH}
+                            placeholder="7-digit employee ID"
+                            value={formData.employee_code}
+                            onChange={handleChange}
+                            className="block w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={regenerateEmployeeCode}
+                            className="inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 transition-all hover:bg-slate-50 hover:text-orange-600"
+                            title="Generate random employee ID"
+                          >
+                            <RefreshCw size={18} />
+                          </button>
+                        </div>
+                      </FormRow>
+                    </>
+                  )}
+
+                  {!hideRoleSelector && (
+                    <FormRow
+                      label="Access Role"
+                      icon={isEmployerAccount ? ShieldCheck : Contact}
                     >
-                      <SelectTrigger className="pl-11 text-slate-900 border-slate-200 focus:ring-orange-500/10 focus:border-orange-500">
-                        <SelectValue placeholder="Select access role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Employee">Employee</SelectItem>
-                        <SelectItem value="Admin">Administrator</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormRow>
+                      <Select
+                        value={formData.role}
+                        onValueChange={handleRoleChange}
+                      >
+                        <SelectTrigger className="pl-11 text-slate-900 border-slate-200 focus:ring-orange-500/10 focus:border-orange-500">
+                          <SelectValue placeholder="Select access role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allowedRoles.includes("Employee") && (
+                            <SelectItem value="Employee">Employee</SelectItem>
+                          )}
+                          {allowedRoles.includes("Employer") && (
+                            <SelectItem value="Employer">Employer</SelectItem>
+                          )}
+                          {allowedRoles.includes("System Admin") && (
+                            <SelectItem value="System Admin">System Administrator</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </FormRow>
+                  )}
                 </div>
 
                 {/* Footer */}
                 <div className="pt-6 mt-6 border-t border-slate-100">
                   <p className="mb-4 text-xs font-medium text-slate-500">
-                    Employee ID can be typed manually or regenerated randomly. A QR
-                    code will be generated automatically from this ID.
+                    {isEmployeeRole
+                      ? shouldAskEmployerCode
+                        ? "Employee accounts must use a valid employer invite code. The employee will inherit that employer's department, and a QR code will be generated automatically from the employee ID."
+                        : "Enter the employee's required details. Their account will be assigned to your employer automatically, and a QR code will be generated from the employee ID."
+                      : "Employer accounts are assigned a department by the system administrator and receive an automatic alphanumeric employer code."}
                   </p>
                   <button
                     type="submit"

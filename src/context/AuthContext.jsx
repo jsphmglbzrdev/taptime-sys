@@ -28,10 +28,29 @@ function toSyncSession(session) {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const { setLoading } = useLoading();
   const peerIdRef = useRef(createPeerId());
   const suppressBroadcastUntilRef = useRef(0);
   const pendingRequestRef = useRef(null);
+
+  const fetchProfile = async (authId) => {
+    if (!authId) {
+      setProfile(null);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("auth_id", authId)
+      .maybeSingle();
+
+    if (!error && data) {
+      setProfile(data);
+    } else {
+      setProfile(null);
+    }
+  };
 
   useEffect(() => {
     const syncChannel =
@@ -143,6 +162,7 @@ export const AuthProvider = ({ children }) => {
 
         if (existingSession?.user) {
           setUser(existingSession.user);
+          await fetchProfile(existingSession.user.id);
           return;
         }
 
@@ -152,11 +172,15 @@ export const AuthProvider = ({ children }) => {
           const { data: refreshedData } = await supabase.auth.getSession();
           if (isMounted) {
             setUser(refreshedData.session?.user ?? null);
+            if (refreshedData.session?.user) {
+              await fetchProfile(refreshedData.session.user.id);
+            }
           }
           return;
         }
 
         setUser(null);
+        setProfile(null);
       } finally {
         setLoading(false);
       }
@@ -169,6 +193,11 @@ export const AuthProvider = ({ children }) => {
         if (!isMounted) return;
 
         setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchProfile(session.user.id);
+        } else {
+          setProfile(null);
+        }
 
         if (!syncChannel || shouldSuppressBroadcast()) {
           return;
@@ -206,7 +235,7 @@ export const AuthProvider = ({ children }) => {
   }, [setLoading]);
 
   return (
-    <AuthContext.Provider value={{ user }}>
+    <AuthContext.Provider value={{ user, profile }}>
       {children}
     </AuthContext.Provider>
   );

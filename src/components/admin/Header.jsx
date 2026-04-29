@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { getCurrentUser } from "../../utils/auth";
 import { AVATAR_UPDATED_EVENT, resolveAvatarSrc } from "../../utils/avatar";
 import NotificationBell from "../NotificationBell";
+import { getRoleLabel } from "../../utils/roles";
 
-export default function Header({ setIsSidebarOpen, activeTab }) {
+export default function Header({ setIsSidebarOpen }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [avatarSrc, setAvatarSrc] = useState("");
   const { user } = useAuth();
@@ -80,13 +81,13 @@ export default function Header({ setIsSidebarOpen, activeTab }) {
             {currentUser?.first_name} {currentUser?.last_name}
           </p>
           <p className="text-[10px] text-orange-500 font-black uppercase tracking-wider mt-1">
-            {currentUser?.role}
+            {getRoleLabel(currentUser?.role)}
           </p>
         </div>
         {avatarSrc ? (
           <img
             src={avatarSrc}
-            alt="Admin profile"
+            alt="Employer profile"
             className="w-10 h-10 rounded-full object-cover object-center border-2 border-orange-100 shadow-sm"
           />
         ) : (

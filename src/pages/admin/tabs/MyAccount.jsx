@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Mail, Shield, Trash2 } from "lucide-react";
+import { Copy, Eye, Mail, Shield, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../../../context/AuthContext";
@@ -17,6 +17,7 @@ import {
 import AvatarEditorModal from "../../../components/AvatarEditorModal";
 import AvatarViewerModal from "../../../components/AvatarViewerModal";
 import ConfirmationBox from "../../../components/ConfirmationBox";
+import { getRoleLabel } from "../../../utils/roles";
 
 const MyAccount = () => {
   const { user } = useAuth();
@@ -213,6 +214,21 @@ const MyAccount = () => {
     return parts.map((p) => p[0]).join("").toUpperCase();
   }, [displayName]);
 
+  const handleCopyEmployerCode = useCallback(async () => {
+    const code = String(profile?.employer_code ?? "").trim();
+    if (!code) {
+      toast.error("No employer code available yet.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.success("Employer code copied.");
+    } catch {
+      toast.error("Failed to copy employer code.");
+    }
+  }, [profile?.employer_code]);
+
   if (!user) {
     return (
       <div className="text-sm font-medium text-gray-500">
@@ -228,7 +244,7 @@ const MyAccount = () => {
           My account
         </h2>
         <p className="text-gray-500 text-sm font-medium">
-          View and update your admin profile
+          View and update your employer profile
         </p>
       </div>
 
@@ -237,7 +253,7 @@ const MyAccount = () => {
           {avatarSrc ? (
             <img
               src={avatarSrc}
-              alt="Admin profile"
+              alt="Employer profile"
               className="w-24 h-24 rounded-full object-cover object-center border-4 border-orange-100 shrink-0"
             />
           ) : (
@@ -256,7 +272,7 @@ const MyAccount = () => {
               </span>
               <span className="inline-flex items-center gap-1.5 text-orange-600">
                 <Shield size={14} />
-                {String(profile?.role ?? "Admin")}
+                {getRoleLabel(String(profile?.role ?? "Employer"))}
               </span>
             </div>
             <div className="pt-1">
@@ -306,6 +322,28 @@ const MyAccount = () => {
         </div>
 
         <form onSubmit={handleSave} className="mt-6 space-y-4">
+          {profile?.employer_code && (
+            <div className="rounded-2xl border border-orange-100 bg-orange-50/70 px-5 py-5">
+              <p className="text-xs font-black uppercase tracking-widest text-orange-500">
+                Employer Invite Code
+              </p>
+              <p className="mt-3 break-all text-xl font-black tracking-[0.18em] text-gray-900">
+                {profile.employer_code}
+              </p>
+              <p className="mt-2 text-sm font-medium text-gray-600">
+                Invite your employees to sign up using this code so they join your employer account automatically.
+              </p>
+              <button
+                type="button"
+                onClick={handleCopyEmployerCode}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
+              >
+                <Copy size={16} />
+                Copy employer code
+              </button>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
               First name
@@ -375,7 +413,7 @@ const MyAccount = () => {
         isOpen={isAvatarEditorOpen}
         file={avatarDraftFile}
         isSaving={isUploadingAvatar}
-        title="Edit admin profile picture"
+        title="Edit employer profile picture"
         onClose={() => {
           if (isUploadingAvatar) return;
           setIsAvatarEditorOpen(false);

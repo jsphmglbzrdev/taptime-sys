@@ -14,6 +14,8 @@ import {
   listTimeEntriesByAuthId,
   listUserProfiles,
 } from "../../../utils/admin";
+import { useAuth } from "../../../context/AuthContext";
+import { matchesEmployerScope } from "../../../utils/employerScope";
 import { supabase } from "../../../utils/supabase";
 import {
   formatReadableDateTime,
@@ -697,6 +699,7 @@ export default function EmployeeLogsTab({
   initialShiftDate = null,
   onConsumeInitialEmployeeAuthId,
 }) {
+  const { profile } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [selectedAuthId, setSelectedAuthId] = useState(initialEmployeeAuthId);
   const [search, setSearch] = useState("");
@@ -719,11 +722,15 @@ export default function EmployeeLogsTab({
         toast.error(res.error || "Failed to load employees.");
         return;
       }
-      setEmployees((res.data ?? []).filter((row) => row?.role === "Employee"));
+      setEmployees(
+        (res.data ?? []).filter(
+          (row) => row?.role === "Employee" && matchesEmployerScope(profile, row),
+        ),
+      );
     } finally {
       setIsEmployeesLoading(false);
     }
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     loadEmployees();

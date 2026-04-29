@@ -15,6 +15,8 @@ import {
   listTimeEntriesByShiftDate,
   listUserProfiles,
 } from "../../../utils/admin";
+import { useAuth } from "../../../context/AuthContext";
+import { matchesEmployerScope } from "../../../utils/employerScope";
 import { supabase } from "../../../utils/supabase";
 import {
   formatPersonalBreakLogValue,
@@ -181,30 +183,39 @@ function BreakActivityModal({ isOpen, onClose, row }) {
                 No break activity recorded for today.
               </div>
             ) : (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 space-y-3">
                 {history.map((item) => (
                   <div
                     key={item.id}
-                    className="rounded-2xl border border-orange-100 bg-orange-50/60 px-4 py-4"
+                    className="rounded-2xl border border-orange-100 bg-orange-50/60 px-5 py-4"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-orange-700 shadow-sm">
-                        {item.label}
-                      </span>
-                      <span className="text-xs font-bold text-gray-500">
-                        {formatTime(item.at)}
-                      </span>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-orange-600 shadow-sm border border-orange-50">
+                          <Coffee size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-gray-900">
+                            Break {item.label}
+                          </p>
+                          <p className="text-[11px] font-bold text-gray-500">
+                            {formatTime(item.at)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-orange-600">
+                          {item.remainingSeconds > 0
+                            ? `${Math.floor(item.remainingSeconds / 60)}m left`
+                            : "No time left"}
+                        </p>
+                        {item.note && (
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                            {item.note.replace(/_/g, " ")}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <p className="mt-3 text-sm font-medium text-gray-600">
-                      {item.remainingSeconds > 0
-                        ? `${Math.floor(item.remainingSeconds / 60)} min left`
-                        : "No time left"}
-                    </p>
-                    {item.note && (
-                      <p className="mt-1 text-xs font-bold uppercase tracking-wide text-gray-400">
-                        {item.note.replace(/_/g, " ")}
-                      </p>
-                    )}
                   </div>
                 ))}
               </div>
@@ -217,6 +228,7 @@ function BreakActivityModal({ isOpen, onClose, row }) {
 }
 
 export default function OverviewTab({ currentTime, onOpenEmployeeLogs }) {
+  const { profile } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [todayEntries, setTodayEntries] = useState([]);
   const [todayWeeklyShifts, setTodayWeeklyShifts] = useState([]);
@@ -235,8 +247,12 @@ export default function OverviewTab({ currentTime, onOpenEmployeeLogs }) {
       toast.error(res.error || "Failed to load employees.");
       return;
     }
-    setEmployees((res.data ?? []).filter((row) => row?.role === "Employee"));
-  }, []);
+    setEmployees(
+      (res.data ?? []).filter(
+        (row) => row?.role === "Employee" && matchesEmployerScope(profile, row),
+      ),
+    );
+  }, [profile]);
 
   const loadTodayEntries = useCallback(async () => {
     const autoEndRes = await autoEndExpiredBreaksByShiftDate({

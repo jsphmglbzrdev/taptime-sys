@@ -22,6 +22,7 @@ export default function Sidebar({
   setIsSidebarOpen,
   activeTab,
   setActiveTab,
+  hasEmployees = true,
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -32,7 +33,13 @@ export default function Sidebar({
     { id: "Overview", icon: <LayoutDashboard size={20} />, label: "Overview" },
     { id: "Employee Logs", icon: <BookOpenText size={20} />, label: "Employee Logs" },
     { id: "Employees", icon: <Users size={20} />, label: "Employees" },
-    { id: "Manage Shift", icon: <Timer size={20} />, label: "Manage Shift" },
+    {
+      id: "Manage Shift",
+      icon: <Timer size={20} />,
+      label: "Manage Shift",
+      disabled: !hasEmployees,
+      infoText: "Add an employee account first",
+    },
     { id: "My Account", icon: <User2 size={20} />, label: "My Account" },
   ];
 
@@ -80,7 +87,7 @@ export default function Sidebar({
                   TapTime
                 </p>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
-                  Admin
+                  Employer
                 </p>
               </div>
             </div>
@@ -102,6 +109,8 @@ export default function Sidebar({
                 label={item.label}
                 active={activeTab === item.id}
                 collapsed={isCollapsed}
+                disabled={item.disabled}
+                infoText={item.infoText}
                 onClick={() => {
                   setActiveTab(item.id);
                   setIsSidebarOpen(false);

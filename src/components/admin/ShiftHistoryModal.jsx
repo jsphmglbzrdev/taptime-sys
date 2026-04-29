@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "react-toastify";
-import { supabase } from "../../utils/supabase";
+import { useAuth } from "../../context/AuthContext";
+import { getEmployeeWeeklyShiftHistory } from "../../utils/admin";
 import {
   formatShiftTimeLabel,
   formatReadableDateTime,
@@ -34,6 +35,7 @@ export default function ShiftHistoryModal({
   employeeAuthId,
   employeeLabel,
 }) {
+  const { profile } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [current, setCurrent] = useState(null);
   const [historyRows, setHistoryRows] = useState([]);
@@ -42,37 +44,22 @@ export default function ShiftHistoryModal({
     if (!employeeAuthId) return;
     setIsLoading(true);
     try {
-      const [curRes, histRes] = await Promise.all([
-        supabase
-          .from("employee_weekly_shifts")
-          .select(
-            "id, week_start, week_end, shift_start_time, shift_end_time, created_at",
-          )
-          .eq("employee_auth_id", employeeAuthId)
-          .order("week_start", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("employee_weekly_shift_history")
-          .select(
-            "id, shift_created_at, week_start, week_end, shift_start_time, shift_end_time, superseded_at",
-          )
-          .eq("employee_auth_id", employeeAuthId)
-          .order("superseded_at", { ascending: false }),
-      ]);
+      const res = await getEmployeeWeeklyShiftHistory({
+        viewerProfile: profile,
+        employee_auth_id: employeeAuthId,
+      });
 
-      if (curRes.error) throw curRes.error;
-      if (histRes.error) throw histRes.error;
+      if (!res.success) throw new Error(res.error || "Failed to load shift history.");
 
-      setCurrent(curRes.data ?? null);
-      setHistoryRows(histRes.data ?? []);
+      setCurrent(res.current ?? null);
+      setHistoryRows(res.history ?? []);
     } catch {
       setCurrent(null);
       setHistoryRows([]);
     } finally {
       setIsLoading(false);
     }
-  }, [employeeAuthId]);
+  }, [employeeAuthId, profile]);
 
   const handleDownload = useCallback(() => {
     if (!employeeAuthId) return;

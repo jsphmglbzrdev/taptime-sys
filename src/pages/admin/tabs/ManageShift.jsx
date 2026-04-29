@@ -10,6 +10,13 @@ import {
   formatShiftTimeLabel,
   normalizeTimeString,
 } from "../../../utils/shiftSchedule";
+import {
+  deleteEmployeeWeeklyShift,
+  listEmployeeWeeklyShifts,
+  listUserProfiles,
+  saveEmployeeWeeklyShift,
+} from "../../../utils/admin";
+import { matchesEmployerScope } from "../../../utils/employerScope";
 
 function formatEmployeeName(emp) {
   if (!emp) return "-";
@@ -35,7 +42,7 @@ function pickLatestShiftPerEmployee(rows) {
 }
 
 export default function ManageShift() {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [shiftRows, setShiftRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -58,48 +65,32 @@ export default function ManageShift() {
 
   const loadEmployees = useCallback(async () => {
     try {
-      const res = await supabase
-        .from("user_profiles")
-        .select("auth_id, first_name, last_name, email, role")
-        .eq("role", "Employee")
-        .order("created_at", { ascending: false });
-
-      if (res.error) throw res.error;
-      setEmployees(res.data ?? []);
-    } catch (err) {
+      const res = await listUserProfiles();
+      if (!res.success) throw new Error(res.error || "Failed to load employees.");
+      setEmployees(
+        (res.data ?? []).filter(
+          (row) => row?.role === "Employee" && matchesEmployerScope(profile, row),
+        ),
+      );
+    } catch {
       toast.error("Failed to load employees.");
     }
-  }, []);
+  }, [profile]);
 
   const loadWeeklyShifts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await supabase
-        .from("employee_weekly_shifts")
-        .select(
-          `
-          id,
-          employee_auth_id,
-          week_start,
-          week_end,
-          shift_start_time,
-          shift_end_time,
-          created_at
-        `
-        )
-        .order("week_start", { ascending: false })
-        .order("created_at", { ascending: false });
-
-      if (res.error) throw res.error;
+      const res = await listEmployeeWeeklyShifts({ viewerProfile: profile });
+      if (!res.success) throw new Error(res.error || "Failed to load weekly shifts.");
       setShiftRows(res.data ?? []);
-    } catch (err) {
+    } catch {
       toast.error(
         "Failed to load weekly shifts. (Make sure you created the `employee_weekly_shifts` table.)"
       );
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     loadEmployees();
@@ -157,67 +148,19 @@ export default function ManageShift() {
     async (payload) => {
       setIsSaving(true);
       try {
-        const safePayload = {
-          employee_auth_id: payload.employee_auth_id,
-          week_start: payload.week_start,
-          week_end: payload.week_end,
-          shift_start_time: payload.shift_start_time,
-          shift_end_time: payload.shift_end_time,
-        };
-        const currentRes = await supabase
-          .from("employee_weekly_shifts")
-          .select("*")
-          .eq("employee_auth_id", safePayload.employee_auth_id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (currentRes.error) throw currentRes.error;
+        const res = await saveEmployeeWeeklyShift({
+          viewerProfile: profile,
+          payload: {
+            employee_auth_id: payload.employee_auth_id,
+            week_start: payload.week_start,
+            week_end: payload.week_end,
+            shift_start_time: normalizeTimeString(payload.shift_start_time),
+            shift_end_time: normalizeTimeString(payload.shift_end_time),
+          },
+        });
 
-        const prev = currentRes.data ?? null;
-
-        if (prev) {
-          const sameStart =
-            normalizeTimeString(prev.shift_start_time) ===
-            normalizeTimeString(safePayload.shift_start_time);
-          const sameEnd =
-            normalizeTimeString(prev.shift_end_time) ===
-            normalizeTimeString(safePayload.shift_end_time);
-          const hasChanges =
-            prev.week_start !== safePayload.week_start ||
-            prev.week_end !== safePayload.week_end ||
-            !sameStart ||
-            !sameEnd ||
-            prev.employee_auth_id !== safePayload.employee_auth_id;
-
-          if (hasChanges) {
-            const histRes = await supabase
-              .from("employee_weekly_shift_history")
-              .insert({
-                shift_created_at: prev.created_at,
-                employee_auth_id: prev.employee_auth_id,
-                week_start: prev.week_start,
-                week_end: prev.week_end,
-                shift_start_time: prev.shift_start_time,
-                shift_end_time: prev.shift_end_time,
-              });
-            if (histRes.error) throw histRes.error;
-          }
-
-          const updateRes = await supabase
-            .from("employee_weekly_shifts")
-            .update(
-              hasChanges
-                ? { ...safePayload, created_at: new Date().toISOString() }
-                : safePayload,
-            )
-            .eq("id", prev.id);
-          if (updateRes.error) throw updateRes.error;
-
-        } else {
-          const insertRes = await supabase
-            .from("employee_weekly_shifts")
-            .insert(safePayload);
-          if (insertRes.error) throw insertRes.error;
+        if (!res.success) {
+          throw new Error(res.error || "Failed to save shift schedule.");
         }
 
         toast.success("Weekly shift saved.");
@@ -230,7 +173,7 @@ export default function ManageShift() {
         setIsSaving(false);
       }
     },
-    [employeesById, loadWeeklyShifts, user?.email, user?.id],
+    [loadWeeklyShifts, profile],
   );
 
   const requestDelete = useCallback((row) => {
@@ -246,23 +189,13 @@ export default function ManageShift() {
       setDeleteConfirmOpen(false);
       setDeletingId(row.id);
       try {
-        const historyRes = await supabase
-          .from("employee_weekly_shift_history")
-          .insert({
-            shift_created_at: row.created_at,
-            employee_auth_id: row.employee_auth_id,
-            week_start: row.week_start,
-            week_end: row.week_end,
-            shift_start_time: row.shift_start_time,
-            shift_end_time: row.shift_end_time,
-          });
-        if (historyRes.error) throw historyRes.error;
-
-        const deleteRes = await supabase
-          .from("employee_weekly_shifts")
-          .delete()
-          .eq("id", row.id);
-        if (deleteRes.error) throw deleteRes.error;
+        const res = await deleteEmployeeWeeklyShift({
+          viewerProfile: profile,
+          row,
+        });
+        if (!res.success) {
+          throw new Error(res.error || "Failed to delete shift.");
+        }
 
         if (prefillShift?.id === row.id) {
           setIsManageShiftOpen(false);
@@ -278,7 +211,7 @@ export default function ManageShift() {
         setDeletingId(null);
       }
     },
-    [employeesById, loadWeeklyShifts, pendingDeleteRow, prefillShift?.id, user?.email, user?.id],
+    [loadWeeklyShifts, pendingDeleteRow, prefillShift?.id, profile],
   );
 
   return (

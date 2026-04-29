@@ -14,9 +14,11 @@ import {
   getProfileDisplayName,
 } from "../../utils/notificationEvents";
 import { useAppShell } from "../../context/AppShellContext";
-
+import { useAuth } from "../../context/AuthContext";
+import { matchesEmployerScope } from "../../utils/employerScope";
 
 export default function AdminDashboard() {
+  const { profile } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Overview");
   const [logsTargetView, setLogsTargetView] = useState(null);
@@ -34,8 +36,12 @@ export default function AdminDashboard() {
   const loadEmployeeProfiles = useCallback(async () => {
     const res = await listUserProfiles();
     if (!res.success) return;
-    setEmployeeProfiles((res.data ?? []).filter((row) => row?.role === "Employee"));
-  }, []);
+    setEmployeeProfiles(
+      (res.data ?? []).filter(
+        (row) => row?.role === "Employee" && matchesEmployerScope(profile, row),
+      ),
+    );
+  }, [profile]);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -76,7 +82,7 @@ export default function AdminDashboard() {
       if (entriesRes.error) throw entriesRes.error;
 
       const nextProfiles = (profilesRes.data ?? []).filter(
-        (row) => row?.role === "Employee",
+        (row) => row?.role === "Employee" && matchesEmployerScope(profile, row),
       );
       setEmployeeProfiles(nextProfiles);
 
@@ -134,17 +140,20 @@ export default function AdminDashboard() {
 
       attendanceSnapshotRef.current = nextAttendanceMap;
     },
-    [addNotification],
+    [addNotification, profile],
   );
 
   useEffect(() => {
-    syncAdminNotificationSnapshots({ notify: false }).catch(() => {});
+    const initialSyncId = window.setTimeout(() => {
+      syncAdminNotificationSnapshots({ notify: false }).catch(() => {});
+    }, 0);
 
     const pollId = window.setInterval(() => {
       syncAdminNotificationSnapshots({ notify: true }).catch(() => {});
     }, 20000);
 
     return () => {
+      window.clearTimeout(initialSyncId);
       window.clearInterval(pollId);
     };
   }, [syncAdminNotificationSnapshots]);
@@ -192,7 +201,9 @@ export default function AdminDashboard() {
           const nextRow = payload?.new ?? null;
           const previousRow = payload?.old ?? null;
           const target = nextRow ?? previousRow;
-          if (!target || target.role !== "Employee") return;
+          if (!target || target.role !== "Employee" || !matchesEmployerScope(profile, target)) {
+            return;
+          }
 
           if (nextRow) {
             employeeSnapshotRef.current.set(
@@ -222,7 +233,7 @@ export default function AdminDashboard() {
     return () => {
       supabase.removeChannel(adminNotificationChannel);
     };
-  }, [addNotification, employeeProfileMap, loadEmployeeProfiles]);
+  }, [addNotification, employeeProfileMap, loadEmployeeProfiles, profile]);
 
   return (
     <div className="admin-portal flex h-screen bg-gray-50 overflow-hidden font-[roboto] text-slate-900">
@@ -230,7 +241,8 @@ export default function AdminDashboard() {
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
         activeTab={activeTab}
-        setActiveTab={setActiveTab} 
+        setActiveTab={setActiveTab}
+        hasEmployees={employeeProfiles.length > 0}
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -259,12 +271,28 @@ export default function AdminDashboard() {
                 onConsumeInitialEmployeeAuthId={() => setLogsTargetView(null)}
               />
             )}
-            {activeTab === "Employees" && (<EmployeesTab />)}
-            {activeTab === "Manage Shift" && (<ManageShift />)}
-            {activeTab === "My Account" && (<MyAccount />)}
+            {activeTab === "Employees" && <EmployeesTab />}
+            {activeTab === "Manage Shift" &&
+              (employeeProfiles.length > 0 ? (
+                <ManageShift />
+              ) : (
+                <OverviewTab
+                  currentTime={currentTime}
+                  onOpenEmployeeLogs={(view) => {
+                    if (typeof view === "string") {
+                      setLogsTargetView({ authId: view });
+                    } else {
+                      setLogsTargetView(view ?? null);
+                    }
+                    setActiveTab("Employee Logs");
+                  }}
+                />
+              ))}
+            {activeTab === "My Account" && <MyAccount />}
           </div>
         </div>
       </main>
     </div>
   );
 }
+

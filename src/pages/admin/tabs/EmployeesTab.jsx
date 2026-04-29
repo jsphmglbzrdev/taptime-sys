@@ -1,5 +1,4 @@
-import { Mail, Pencil, Plus, Trash2 } from "lucide-react";
-import AccountCreationModal from "../../../components/admin/AccountCreationModal";
+import { Mail, Pencil, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   listUserProfiles,
@@ -9,9 +8,11 @@ import {
 import { useLoading } from "../../../context/LoadingContext";
 import { toast } from "react-toastify";
 import { useAuth } from "../../../context/AuthContext";
+import { matchesEmployerScope } from "../../../utils/employerScope";
 import DeleteEmployeeModal from "../../../components/admin/DeleteEmployeeModal";
 import EditEmployeeModal from "../../../components/admin/EditEmployeeModal";
 import ManageShiftModal from "../../../components/admin/ManageShiftModal";
+import AccountCreationModal from "../../../components/admin/AccountCreationModal";
 import AvatarEditorModal from "../../../components/AvatarEditorModal";
 import AvatarViewerModal from "../../../components/AvatarViewerModal";
 import ConfirmationBox from "../../../components/ConfirmationBox";
@@ -22,15 +23,16 @@ import {
   saveAvatarForUser,
   validateAvatarFile,
 } from "../../../utils/avatar";
+import { UserPlus } from "lucide-react";
 
 function EmployeesTab() {
-  const [isFormOpen, setIsFormOpen] = useState(false);
   const { setLoading } = useLoading();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [avatarSrcByAuthId, setAvatarSrcByAuthId] = useState({});
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selected, setSelected] = useState(null);
   const [isManageShiftOpen, setIsManageShiftOpen] = useState(false);
   const [isAvatarBusy, setIsAvatarBusy] = useState(false);
@@ -47,13 +49,15 @@ function EmployeesTab() {
         toast.error(res.error || "Failed to load accounts");
         return [];
       }
-      const nextEmployees = res.data ?? [];
+      const nextEmployees = (res.data ?? []).filter((row) =>
+        matchesEmployerScope(profile, row),
+      );
       setEmployees(nextEmployees);
       return nextEmployees;
     } finally {
       setLoading(false);
     }
-  }, [setLoading]);
+  }, [profile, setLoading]);
 
   useEffect(() => {
     loadEmployees();
@@ -88,7 +92,7 @@ function EmployeesTab() {
     return () => {
       cancelled = true;
     };
-  }, [employees, resolveAvatarSrc]);
+  }, [employees]);
 
   const confirmText = useMemo(
     () => selected?.email ?? "DELETE",
@@ -256,18 +260,19 @@ function EmployeesTab() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-gray-800 tracking-tight">
-            Employee Accounts
+            Employee Directory
           </h2>
           <p className="text-gray-500 text-sm font-medium">
-            Manage organization employee account
+            Review and maintain employee accounts
           </p>
         </div>
         <button
-          onClick={() => setIsFormOpen(true)}
-          className="flex cursor-pointer items-center justify-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-xl font-bold shadow-lg shadow-orange-100 hover:bg-orange-600 transition-all"
+          type="button"
+          onClick={() => setIsCreateOpen(true)}
+          className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-orange-600"
         >
-          <Plus size={18} />
-          Create Account
+          <UserPlus size={18} />
+          Create Employee Account
         </button>
       </div>
 
@@ -365,14 +370,6 @@ function EmployeesTab() {
         }}
       />
 
-      <AccountCreationModal
-        isOpen={isFormOpen}
-        setIsFormOpen={(open) => {
-          setIsFormOpen(open);
-          if (!open) loadEmployees();
-        }}
-      />
-
       <EditEmployeeModal
         key={selected?.auth_id ?? "no-employee"}
         isOpen={isEditOpen}
@@ -433,6 +430,21 @@ function EmployeesTab() {
           setIsDeleteAvatarModalOpen(false);
           await handleDeleteAvatar();
         }}
+      />
+
+      <AccountCreationModal
+        isOpen={isCreateOpen}
+        setIsFormOpen={(open) => {
+          setIsCreateOpen(open);
+          if (!open) {
+            loadEmployees();
+          }
+        }}
+        allowedRoles={["Employee"]}
+        lockedRole="Employee"
+        defaultEmployerCode={profile?.employer_code ?? ""}
+        title="Create Employee Account"
+        description="Add a new employee under your employer account using the required employee details."
       />
     </div>
   );
