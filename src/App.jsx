@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 import LoginPage from "./pages/LoginPage";
 import SignUpPage from "./pages/SignUpPage";
@@ -10,20 +11,22 @@ import SystemAdminDashboard from "./pages/system-admin/SystemAdminDashboard";
 
 const App = () => {
   return (
-    // App.jsx
-    <Routes>
-      <Route element={<OutletLayout />}>
-        <Route index element={<Navigate to="/login" replace />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignUpPage />} />
+    <>
+      <Routes>
+        <Route element={<OutletLayout />}>
+          <Route index element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignUpPage />} />
 
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
-        <Route path="/user/dashboard" element={<UserDashboard />} />
-        <Route path="/system-admin/dashboard" element={<SystemAdminDashboard />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/user/dashboard" element={<UserDashboard />} />
+          <Route path="/system-admin/dashboard" element={<SystemAdminDashboard />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
 
-      </Route>
-    </Routes>
+        </Route>
+      </Routes>
+      <SpeedInsights />
+    </>
   );
 };
 
