@@ -123,12 +123,12 @@ export default function SignUpForm() {
         <div className="p-6 sm:p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4">
-              <img src={logo} alt="" />
-              <img src={jk2l2_logo} alt="" />
+              <img src={logo} alt="TapTime logo" />
+              <img src={jk2l2_logo} alt="" aria-hidden="true" />
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
               Employee Sign Up
-            </h2>
+            </h1>
             <p className="mt-2 text-sm text-gray-500">
               Create your employee account first, then finish the setup with your employer invite code.
             </p>

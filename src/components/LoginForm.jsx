@@ -7,7 +7,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { isEmployerRole } from "../utils/roles";
 import logo from "/surf2sawa.png";
-import jk2l2_logo from "/JK2L2_Crown.png"
+import jk2l2_logo from "/JK2L2_Crown.png";
 export default function LoginForm() {
   const { setLoading } = useLoading();
   const { user } = useAuth();
@@ -92,12 +92,12 @@ export default function LoginForm() {
         <div className="p-6 sm:p-8">
           <div className="text-center mb-10">
             <div className="inline-flex items-center justify-center w-16 h-16  rounded-full mb-4">
-              <img src={logo} alt="" />
-              <img src={jk2l2_logo} alt="" />
+              <img src={logo} alt="TapTime logo" />
+              <img src={jk2l2_logo} alt="" aria-hidden="true" />
 
             </div>
-       
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Welcome Back</h2>
+
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Welcome Back</h1>
             <p className="text-gray-500 mt-2 text-sm sm:base">
               Please enter your details to sign in
             </p>
@@ -139,7 +139,7 @@ export default function LoginForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-10 pr-12 py-3 border border-gray-200 rounded-xl focus:ring-1 focus:ring-orange-500 focus:border-orange-500 transition-all outline-none"
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                 />
                 <button
                   type="button"
